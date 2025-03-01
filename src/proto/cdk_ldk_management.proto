@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package cdk_ldk_management;
+
+service CdkLdkManagement {
+  rpc GetInfo(GetInfoRequest) returns (GetInfoResponse) {}
+  rpc GetNewAddress(GetNewAddressRequest) returns (GetNewAddressResponse) {}
+  rpc OpenChannel(OpenChannelRequest) returns (OpenChannelResponse) {}
+  rpc CloseChannel(CloseChannelRequest) returns (CloseChannelResponse) {}
+  rpc ListBalance(ListBalanceRequest) returns (ListBalanceResponse) {}
+  rpc SendOnchain(SendOnchainRequest) returns (SendOnchainResponse) {}
+}
+
+message GetInfoRequest {}
+
+message GetInfoResponse {}
+
+message GetNewAddressRequest {}
+
+message GetNewAddressResponse {
+  string address = 1;
+}
+
+message OpenChannelRequest {
+  string node_id = 1;
+  string address = 2;
+  uint32 port = 3;
+  uint64 amount_msats = 4;
+  optional uint64 push_to_counter_party_msats = 5;
+}
+
+message OpenChannelResponse {
+  string channel_id = 1;
+}
+
+message CloseChannelRequest {
+  string channel_id = 1;
+  string node_pubkey = 2;
+}
+
+message CloseChannelResponse {
+}
+
+message ListBalanceRequest {}
+
+message ListBalanceResponse {
+  uint64 total_onchain_balance_sats = 1;
+  uint64 spendable_onchain_balance_sats = 2;
+  uint64 total_lightning_balance_sats = 3;
+}
+
+message SendOnchainRequest {
+  uint64 amount_sat = 1;
+  string address = 2;
+}
+
+message SendOnchainResponse {
+  string txid = 1;
+}
+
