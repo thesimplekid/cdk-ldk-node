@@ -17,8 +17,8 @@ path = "src/bin/cdk-ldk-cli.rs"
 
 [dependencies]
 ldk-node = { version = "0.4.3", features = ["uniffi"] }
-cdk-payment-processor = { git = "https://github.com/thesimplekid/cdk", branch = "refactor_payment_processor" }
-cdk-common = { git = "https://github.com/thesimplekid/cdk", branch = "refactor_payment_processor", features = ["mint"] }
+cdk-payment-processor = { git = "https://github.com/thesimplekid/cdk", branch = "update_bolt12" }
+cdk-common = { git = "https://github.com/thesimplekid/cdk", branch = "update_bolt12", features = ["mint"] }
 serde_json = "1.0.139"
 serde = "1.0.218"
 async-trait = "0.1.86"
