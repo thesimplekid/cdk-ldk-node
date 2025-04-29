@@ -18,6 +18,7 @@ use ldk_node::bitcoin::Network;
 use ldk_node::bitcoin::hashes::Hash;
 use ldk_node::lightning::ln::channelmanager::PaymentId;
 use ldk_node::lightning::ln::msgs::SocketAddress;
+use ldk_node::lightning_invoice::{Bolt11InvoiceDescription, Description};
 use ldk_node::payment::{PaymentDirection, PaymentKind, PaymentStatus, SendingParameters};
 use ldk_node::{Builder, Event, Node};
 use tokio::runtime::Runtime;
@@ -64,7 +65,7 @@ impl CdkLdkNode {
         fee_reserve: FeeReserve,
         listening_address: Vec<SocketAddress>,
     ) -> anyhow::Result<Self> {
-        let builder = Builder::new();
+        let mut builder = Builder::new();
         builder.set_network(Network::Regtest);
 
         match chain_source {
@@ -99,7 +100,7 @@ impl CdkLdkNode {
         let (sender, receiver) = tokio::sync::mpsc::channel(8);
 
         Ok(Self {
-            inner: node,
+            inner: node.into(),
             fee_reserve,
             wait_invoice_cancel_token: CancellationToken::new(),
             wait_invoice_is_active: Arc::new(AtomicBool::new(false)),
@@ -144,6 +145,7 @@ impl CdkLdkNode {
                                 payment_id,
                                 payment_hash,
                                 amount_msat: _,
+                                custom_records: _
                             } => {
                                 tracing::info!("Received payment for {}", payment_hash);
                                 if let Some(payment_id) = payment_id {
@@ -159,7 +161,10 @@ impl CdkLdkNode {
                                 tracing::info!("Received ldk node event: {:?}", event);
                             }
                         }
-                        node.event_handled();
+
+                        if let Err(err) = node.event_handled() {
+                            tracing::error!("Error Handing node event. {}", err);
+                        }
                     }
                 }
             }
@@ -199,6 +204,9 @@ impl MintPayment for CdkLdkNode {
                     .unix_expiry
                     .map(|t| t - unix_time())
                     .unwrap_or(36000);
+
+                let description =
+                    Bolt11InvoiceDescription::Direct(Description::new(description).unwrap());
 
                 let payment = self
                     .inner
@@ -289,11 +297,7 @@ impl MintPayment for CdkLdkNode {
                     let amount_msat = to_unit(f, unit, &CurrencyUnit::Msat).unwrap();
 
                     SendingParameters {
-                        max_total_routing_fee_msat: Some(
-                            ldk_node::payment::MaxTotalRoutingFeeLimit::Some {
-                                amount_msat: amount_msat.into(),
-                            },
-                        ),
+                        max_total_routing_fee_msat: Some(Some(amount_msat.into())),
                         max_channel_saturation_power_of_half: None,
                         max_total_cltv_expiry_delta: None,
                         max_path_count: None,

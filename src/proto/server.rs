@@ -124,7 +124,7 @@ impl CdkLdkManagement for CdkLdkServer {
             .node
             .inner
             .onchain_payment()
-            .send_to_address(address.assume_checked_ref(), req.amount_sat)
+            .send_to_address(address.assume_checked_ref(), req.amount_sat, None)
             .map_err(|e| Status::internal(e.to_string()))?;
 
         Ok(Response::new(SendOnchainResponse {
