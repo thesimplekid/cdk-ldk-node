@@ -7,9 +7,9 @@ use async_trait::async_trait;
 use cdk_common::amount::to_unit;
 use cdk_common::common::FeeReserve;
 use cdk_common::payment::{
-    self, Bolt11Settings, CreateIncomingPaymentResponse, IncomingPaymentOptions,
-    MakePaymentResponse, MintPayment, OutgoingPaymentOptions, PaymentIdentifier,
-    PaymentQuoteResponse, WaitPaymentResponse,
+    self, Bolt11Settings, Bolt12IncomingPaymentOptions, CreateIncomingPaymentResponse,
+    IncomingPaymentOptions, MakePaymentResponse, MintPayment, OutgoingPaymentOptions,
+    PaymentIdentifier, PaymentQuoteResponse, WaitPaymentResponse,
 };
 use cdk_common::util::{hex, unix_time};
 use cdk_common::{CurrencyUnit, MeltOptions, MeltQuoteState};
@@ -227,8 +227,47 @@ impl MintPayment for CdkLdkNode {
                     expiry: Some(unix_time() + time),
                 })
             }
-            IncomingPaymentOptions::Bolt12(_) => {
-                Err(anyhow!("Bolt12 payments not supported").into())
+            IncomingPaymentOptions::Bolt12(bolt12_options) => {
+                let Bolt12IncomingPaymentOptions {
+                    description,
+                    amount,
+
+                    unix_expiry,
+                    single_use: _,
+                } = *bolt12_options;
+
+                let time = unix_expiry.map(|t| t - unix_time()).unwrap_or(36000);
+
+                let offer = match amount {
+                    Some(amount) => {
+                        let amount_msat = to_unit(amount, unit, &CurrencyUnit::Msat)?;
+
+                        self.inner
+                            .bolt12_payment()
+                            .receive(
+                                amount_msat.into(),
+                                &description.unwrap_or("".to_string()),
+                                Some(time as u32),
+                                None,
+                            )
+                            .unwrap()
+                    }
+                    None => self
+                        .inner
+                        .bolt12_payment()
+                        .receive_variable_amount(
+                            &description.unwrap_or("".to_string()),
+                            Some(time as u32),
+                        )
+                        .unwrap(),
+                };
+                let payment_identifier = PaymentIdentifier::OfferId(offer.id().to_string());
+
+                Ok(CreateIncomingPaymentResponse {
+                    request_lookup_id: payment_identifier,
+                    request: offer.to_string(),
+                    expiry: Some(unix_time() + time),
+                })
             }
         }
     }
