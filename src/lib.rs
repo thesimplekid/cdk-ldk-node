@@ -66,7 +66,7 @@ impl CdkLdkNode {
         listening_address: Vec<SocketAddress>,
     ) -> anyhow::Result<Self> {
         let mut builder = Builder::new();
-        builder.set_network(Network::Regtest);
+        builder.set_network(Network::Signet);
 
         match chain_source {
             ChainSource::Esplora(esplora_url) => {
@@ -316,8 +316,41 @@ impl MintPayment for CdkLdkNode {
                     options: None,
                 })
             }
-            OutgoingPaymentOptions::Bolt12(_) => {
-                Err(anyhow!("Bolt12 payments not supported").into())
+            OutgoingPaymentOptions::Bolt12(bolt12_options) => {
+                let offer = bolt12_options.offer;
+
+                let amount_msat = match bolt12_options.melt_options {
+                    Some(melt_options) => melt_options.amount_msat(),
+                    None => {
+                        let amount = offer.amount().ok_or(payment::Error::AmountMismatch)?;
+
+                        match amount {
+                            ldk_node::lightning::offers::offer::Amount::Bitcoin {
+                                amount_msats,
+                            } => amount_msats.into(),
+                            _ => return Err(payment::Error::AmountMismatch),
+                        }
+                    }
+                };
+                let amount = to_unit(amount_msat, &CurrencyUnit::Msat, unit)?;
+
+                let relative_fee_reserve =
+                    (self.fee_reserve.percent_fee_reserve * u64::from(amount) as f32) as u64;
+
+                let absolute_fee_reserve: u64 = self.fee_reserve.min_fee_reserve.into();
+
+                let fee = match relative_fee_reserve > absolute_fee_reserve {
+                    true => relative_fee_reserve,
+                    false => absolute_fee_reserve,
+                };
+
+                Ok(PaymentQuoteResponse {
+                    request_lookup_id: PaymentIdentifier::OfferId(offer.id().to_string()),
+                    amount,
+                    fee: fee.into(),
+                    state: MeltQuoteState::Unpaid,
+                    options: None,
+                })
             }
         }
     }
@@ -405,8 +438,68 @@ impl MintPayment for CdkLdkNode {
                     unit: unit.clone(),
                 })
             }
-            OutgoingPaymentOptions::Bolt12(_) => {
-                Err(anyhow!("Bolt12 payments not supported").into())
+            OutgoingPaymentOptions::Bolt12(bolt12_options) => {
+                let offer = bolt12_options.offer;
+
+                let payment_id = match bolt12_options.melt_options {
+                    Some(MeltOptions::Amountless { amountless }) => self
+                        .inner
+                        .bolt12_payment()
+                        .send_using_amount(&offer, amountless.amount_msat.into(), None, None)
+                        .unwrap(),
+                    None => self
+                        .inner
+                        .bolt12_payment()
+                        .send(&offer, None, None)
+                        .unwrap(),
+                    _ => return Err(payment::Error::UnsupportedPaymentOption),
+                };
+
+                // Check payment status for up to 10 seconds
+                let start = std::time::Instant::now();
+                let timeout = std::time::Duration::from_secs(10);
+
+                let (status, payment_details) = loop {
+                    let details = self
+                        .inner
+                        .payment(&payment_id)
+                        .ok_or(anyhow!("Payment not found"))?;
+
+                    match details.status {
+                        PaymentStatus::Succeeded => break (MeltQuoteState::Paid, details),
+                        PaymentStatus::Failed => break (MeltQuoteState::Failed, details),
+                        PaymentStatus::Pending => {
+                            if start.elapsed() > timeout {
+                                break (MeltQuoteState::Pending, details);
+                            }
+                            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                            continue;
+                        }
+                    }
+                };
+
+                let payment_proof = match payment_details.kind {
+                    PaymentKind::Bolt11 {
+                        hash: _,
+                        preimage,
+                        secret: _,
+                    } => preimage.map(|p| p.to_string()),
+                    _ => return Err(anyhow!("Unexpected payment kind").into()),
+                };
+
+                let total_spent = payment_details
+                    .amount_msat
+                    .ok_or(anyhow!("Could not get amount spent"))?;
+
+                let total_spent = to_unit(total_spent, &CurrencyUnit::Msat, unit)?;
+
+                Ok(MakePaymentResponse {
+                    payment_lookup_id: PaymentIdentifier::OfferId(offer.id().to_string()),
+                    payment_proof,
+                    status,
+                    total_spent,
+                    unit: unit.clone(),
+                })
             }
         }
     }

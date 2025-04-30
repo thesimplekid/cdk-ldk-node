@@ -49,21 +49,22 @@ fn main() -> anyhow::Result<()> {
             .unwrap_or("8089".to_string())
             .parse()?;
 
-        // let gossip_source = GossipSource::RapidGossipSync("https://rgs.mutinynet.com".to_string());
-        // let chain_source = ChainSource::Esplora("https://mutinynet.com".to_string());
+        let gossip_source =
+            GossipSource::RapidGossipSync("https://rgs.mutinynet.com/snapshot/0".to_string());
+        let chain_source = ChainSource::Esplora("https://mutinynet.com/api".to_string());
         //
-        let chain_source = ChainSource::BitcoinRpc(BitcoinRpcConfig {
-            host: "0.0.0.0".to_string(),
-            port: 18443,
-            user: "testuser".to_string(),
-            password: "testpass".to_string(),
-        });
+        // let chain_source = ChainSource::BitcoinRpc(BitcoinRpcConfig {
+        //     host: "0.0.0.0".to_string(),
+        //     port: 18443,
+        //     user: "testuser".to_string(),
+        //     password: "testpass".to_string(),
+        // });
 
         let ldk_node_listen_addr = SocketAddress::from_str(&format!("127.0.0.1:8090")).unwrap();
 
         let cdk_ldk = cdk_ldk_node::CdkLdkNode::new(
             chain_source,
-            GossipSource::P2P,
+            gossip_source,
             FeeReserve {
                 min_fee_reserve: 2.into(),
                 percent_fee_reserve: 0.02,
