@@ -19,6 +19,7 @@ use ldk_node::bitcoin::hashes::Hash;
 use ldk_node::lightning::ln::channelmanager::PaymentId;
 use ldk_node::lightning::ln::msgs::SocketAddress;
 use ldk_node::lightning_invoice::{Bolt11InvoiceDescription, Description};
+use ldk_node::lightning_types::payment::PaymentHash;
 use ldk_node::payment::{PaymentDirection, PaymentKind, PaymentStatus, SendingParameters};
 use ldk_node::{Builder, Event, Node};
 use tokio::runtime::Runtime;
@@ -162,10 +163,14 @@ impl CdkLdkNode {
         node: &Arc<Node>,
         sender: &tokio::sync::mpsc::Sender<WaitPaymentResponse>,
         payment_id: Option<PaymentId>,
-        payment_hash: String,
+        payment_hash: PaymentHash,
         amount_msat: u64,
     ) {
-        tracing::info!("Received payment for hash={} of amount={} msat", payment_hash, amount_msat);
+        tracing::info!(
+            "Received payment for hash={} of amount={} msat",
+            payment_hash,
+            amount_msat
+        );
 
         let payment_id = match payment_id {
             Some(id) => id,
@@ -197,15 +202,16 @@ impl CdkLdkNode {
             PaymentKind::Bolt11 { hash, .. } => {
                 (PaymentIdentifier::PaymentHash(hash.0), hash.to_string())
             }
-            PaymentKind::Bolt12Offer { hash, offer_id, .. } => {
-                match hash {
-                    Some(h) => (PaymentIdentifier::OfferId(offer_id.to_string()), h.to_string()),
-                    None => {
-                        tracing::error!("Bolt12 payment missing hash");
-                        return;
-                    }
+            PaymentKind::Bolt12Offer { hash, offer_id, .. } => match hash {
+                Some(h) => (
+                    PaymentIdentifier::OfferId(offer_id.to_string()),
+                    h.to_string(),
+                ),
+                None => {
+                    tracing::error!("Bolt12 payment missing hash");
+                    return;
                 }
-            }
+            },
             k => {
                 tracing::warn!("Received payment of kind {:?} which is not supported", k);
                 return;
