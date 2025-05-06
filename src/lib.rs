@@ -157,6 +157,78 @@ impl CdkLdkNode {
         Ok(())
     }
 
+    /// Handle payment received event
+    async fn handle_payment_received(
+        node: &Arc<Node>,
+        sender: &tokio::sync::mpsc::Sender<WaitPaymentResponse>,
+        payment_id: Option<PaymentId>,
+        payment_hash: String,
+        amount_msat: u64,
+    ) {
+        tracing::info!("Received payment for hash={} of amount={} msat", payment_hash, amount_msat);
+
+        let payment_id = match payment_id {
+            Some(id) => id,
+            None => {
+                tracing::warn!("Received payment without payment_id");
+                return;
+            }
+        };
+
+        // Convert to sats for the response
+        let amount_sat = amount_msat / 1000;
+        let payment_id_hex = hex::encode(payment_id.0);
+
+        tracing::info!(
+            "Processing payment notification: id={}, amount={}",
+            payment_id_hex,
+            amount_sat
+        );
+
+        let payment_details = match node.payment(&payment_id) {
+            Some(details) => details,
+            None => {
+                tracing::error!("Could not find payment details for id={}", payment_id_hex);
+                return;
+            }
+        };
+
+        let (payment_identifier, payment_id) = match payment_details.kind {
+            PaymentKind::Bolt11 { hash, .. } => {
+                (PaymentIdentifier::PaymentHash(hash.0), hash.to_string())
+            }
+            PaymentKind::Bolt12Offer { hash, offer_id, .. } => {
+                match hash {
+                    Some(h) => (PaymentIdentifier::OfferId(offer_id.to_string()), h.to_string()),
+                    None => {
+                        tracing::error!("Bolt12 payment missing hash");
+                        return;
+                    }
+                }
+            }
+            k => {
+                tracing::warn!("Received payment of kind {:?} which is not supported", k);
+                return;
+            }
+        };
+
+        let wait_payment_response = WaitPaymentResponse {
+            payment_identifier,
+            payment_amount: amount_sat.into(),
+            unit: CurrencyUnit::Sat,
+            payment_id,
+        };
+
+        match sender.send(wait_payment_response).await {
+            Ok(_) => tracing::info!("Successfully sent payment notification to stream"),
+            Err(err) => tracing::error!(
+                "Could not send payment received notification on channel: {}",
+                err
+            ),
+        }
+    }
+
+    /// Set up event handling for the node
     pub fn handle_events(&self) -> anyhow::Result<()> {
         let node = self.inner.clone();
         let sender = self.sender.clone();
@@ -180,57 +252,13 @@ impl CdkLdkNode {
                                 amount_msat,
                                 custom_records: _
                             } => {
-                                tracing::info!("Received payment for hash={} of amount={} msat", payment_hash, amount_msat);
-
-                                if let Some(payment_id) = payment_id {
-                                    // Convert to sats for the response
-                                    let amount_sat = amount_msat / 1000;
-                                    let payment_id_hex = hex::encode(payment_id.0);
-
-                                    tracing::info!("Attempting to send payment notification: id={}, amount={}", payment_id_hex, amount_sat);
-
-                                    let payment_details = node.payment(&payment_id).unwrap();
-
-                                    let (payment_identifier, payment_id) = match payment_details.kind {
-                                        PaymentKind::Bolt11 { hash, .. } => {
-                                            (PaymentIdentifier::PaymentHash(hash.0), hash.to_string())
-
-
-                                        }
-                                        PaymentKind::Bolt12Offer { hash, offer_id, .. } => {
-                                            (PaymentIdentifier::OfferId(offer_id.to_string()), hash.unwrap().to_string())
-
-                                        }
-                                        k => {
-                                            tracing::warn!("Received payment of kind  {:?} we do not support.", k);
-                        if let Err(err) = node.event_handled() {
-                            tracing::error!("Error handling node event: {}", err);
-                        } else {
-                            tracing::debug!("Successfully handled node event");
-                        }
-                                            continue
-                                        }
-                                    };
-
-
-                                    let wait_payment_response = WaitPaymentResponse {
-                                        payment_identifier,
-                                        payment_amount: amount_sat.into(),
-                                        unit: CurrencyUnit::Sat,
-                                        payment_id
-
-                                    };
-
-                                    match sender.send(wait_payment_response).await {
-                                        Ok(_) => tracing::info!("Successfully sent payment notification to stream"),
-                                        Err(err) => tracing::error!(
-                                            "Could not send payment received notification on channel: {}",
-                                            err
-                                        ),
-                                    }
-                                } else {
-                                    tracing::warn!("Received payment without payment_id");
-                                }
+                                Self::handle_payment_received(
+                                    &node,
+                                    &sender,
+                                    payment_id,
+                                    payment_hash,
+                                    amount_msat
+                                ).await;
                             }
                             event => {
                                 tracing::debug!("Received other ldk node event: {:?}", event);
