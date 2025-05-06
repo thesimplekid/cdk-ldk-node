@@ -12,7 +12,7 @@ use cdk_common::payment::{
     PaymentIdentifier, PaymentQuoteResponse, WaitPaymentResponse,
 };
 use cdk_common::util::{hex, unix_time};
-use cdk_common::{CurrencyUnit, MeltOptions, MeltQuoteState};
+use cdk_common::{Amount, CurrencyUnit, MeltOptions, MeltQuoteState};
 use futures::{Stream, StreamExt};
 use ldk_node::bitcoin::Network;
 use ldk_node::bitcoin::hashes::Hash;
@@ -25,6 +25,7 @@ use tokio::runtime::Runtime;
 use tokio::sync::Mutex;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
+use tracing::instrument;
 
 pub mod proto;
 
@@ -33,8 +34,8 @@ pub struct CdkLdkNode {
     fee_reserve: FeeReserve,
     wait_invoice_cancel_token: CancellationToken,
     wait_invoice_is_active: Arc<AtomicBool>,
-    sender: tokio::sync::mpsc::Sender<String>,
-    receiver: Arc<Mutex<Option<tokio::sync::mpsc::Receiver<String>>>>,
+    sender: tokio::sync::mpsc::Sender<WaitPaymentResponse>,
+    receiver: Arc<Mutex<Option<tokio::sync::mpsc::Receiver<WaitPaymentResponse>>>>,
     events_cancel_token: CancellationToken,
 }
 
@@ -60,13 +61,16 @@ pub enum GossipSource {
 
 impl CdkLdkNode {
     pub fn new(
+        network: Network,
         chain_source: ChainSource,
         gossip_source: GossipSource,
+        storage_dir_path: String,
         fee_reserve: FeeReserve,
         listening_address: Vec<SocketAddress>,
     ) -> anyhow::Result<Self> {
         let mut builder = Builder::new();
-        builder.set_network(Network::Signet);
+        builder.set_network(network);
+        builder.set_storage_dir_path(storage_dir_path);
 
         match chain_source {
             ChainSource::Esplora(esplora_url) => {
@@ -93,11 +97,19 @@ impl CdkLdkNode {
 
         builder.set_listening_addresses(listening_address)?;
 
-        builder.set_node_alias("Cdk-mint-node".to_string())?;
+        builder.set_node_alias("cdk-ldk-node".to_string())?;
 
         let node = builder.build()?;
 
+        tracing::info!("Creating tokio channel for payment notifications");
         let (sender, receiver) = tokio::sync::mpsc::channel(8);
+
+        let id = node.node_id();
+
+        let adr = node.announcement_addresses();
+
+        tracing::info!("Created node {} with address {:?}", id, adr);
+        tracing::info!("Initialized message channels for payment notifications");
 
         Ok(Self {
             inner: node.into(),
@@ -115,6 +127,11 @@ impl CdkLdkNode {
             Some(runtime) => self.inner.start_with_runtime(runtime)?,
             None => self.inner.start()?,
         };
+        let node_config = self.inner.config();
+
+        tracing::info!("Starting node with network {}", node_config.network);
+
+        tracing::info!("Node status: {:?}", self.inner.status());
 
         self.handle_events()?;
 
@@ -122,8 +139,21 @@ impl CdkLdkNode {
     }
 
     pub fn stop(&self) -> anyhow::Result<()> {
+        tracing::info!("Stopping CdkLdkNode");
+        // Cancel all tokio tasks
+        tracing::info!("Cancelling event handler");
         self.events_cancel_token.cancel();
+
+        // Cancel any wait_invoice streams
+        if self.is_wait_invoice_active() {
+            tracing::info!("Cancelling wait_invoice stream");
+            self.wait_invoice_cancel_token.cancel();
+        }
+
+        // Stop the LDK node
+        tracing::info!("Stopping LDK node");
         self.inner.stop()?;
+        tracing::info!("CdkLdkNode stopped successfully");
         Ok(())
     }
 
@@ -132,7 +162,10 @@ impl CdkLdkNode {
         let sender = self.sender.clone();
         let cancel_token = self.events_cancel_token.clone();
 
+        tracing::info!("Starting event handler task");
+
         tokio::spawn(async move {
+            tracing::info!("Event handler loop started");
             loop {
                 tokio::select! {
                     _ = cancel_token.cancelled() => {
@@ -140,36 +173,80 @@ impl CdkLdkNode {
                         break;
                     }
                     event = node.next_event_async() => {
+                        tracing::debug!("Received event: {:?}", event);
                         match event {
                             Event::PaymentReceived {
                                 payment_id,
                                 payment_hash,
-                                amount_msat: _,
+                                amount_msat,
                                 custom_records: _
                             } => {
-                                tracing::info!("Received payment for {}", payment_hash);
+                                tracing::info!("Received payment for hash={} of amount={} msat", payment_hash, amount_msat);
+
                                 if let Some(payment_id) = payment_id {
-                                    if let Err(err) = sender.send(hex::encode(payment_id.0)).await {
-                                        tracing::error!(
-                                            "Could not send payment received on channel: {}",
+                                    // Convert to sats for the response
+                                    let amount_sat = amount_msat / 1000;
+                                    let payment_id_hex = hex::encode(payment_id.0);
+
+                                    tracing::info!("Attempting to send payment notification: id={}, amount={}", payment_id_hex, amount_sat);
+
+                                    let payment_details = node.payment(&payment_id).unwrap();
+
+                                    let (payment_identifier, payment_id) = match payment_details.kind {
+                                        PaymentKind::Bolt11 { hash, preimage, secret } => {
+                                            (PaymentIdentifier::PaymentHash(hash.0), hash.to_string())
+
+
+                                        }
+                                        PaymentKind::Bolt12Offer { hash, preimage, secret, offer_id, payer_note, quantity } => {
+                                            (PaymentIdentifier::OfferId(offer_id.to_string()), hash.unwrap().to_string())
+
+                                        }
+                                        _ => todo!()
+
+
+
+                                    };
+
+
+                                    let wait_payment_response = WaitPaymentResponse {
+                                        payment_identifier,
+                                        payment_amount: amount_sat.into(),
+                                        unit: CurrencyUnit::Sat,
+                                        payment_id
+
+                                    };
+
+
+
+                                    match sender.send(wait_payment_response).await {
+                                        Ok(_) => tracing::info!("Successfully sent payment notification to stream"),
+                                        Err(err) => tracing::error!(
+                                            "Could not send payment received notification on channel: {}",
                                             err
-                                        );
+                                        ),
                                     }
+                                } else {
+                                    tracing::warn!("Received payment without payment_id");
                                 }
                             }
                             event => {
-                                tracing::info!("Received ldk node event: {:?}", event);
+                                tracing::debug!("Received other ldk node event: {:?}", event);
                             }
                         }
 
                         if let Err(err) = node.event_handled() {
-                            tracing::error!("Error Handing node event. {}", err);
+                            tracing::error!("Error handling node event: {}", err);
+                        } else {
+                            tracing::debug!("Successfully handled node event");
                         }
                     }
                 }
             }
+            tracing::info!("Event handler loop terminated");
         });
 
+        tracing::info!("Event handler task spawned");
         Ok(())
     }
 }
@@ -191,6 +268,7 @@ impl MintPayment for CdkLdkNode {
     }
 
     /// Create a new invoice
+    #[instrument(skip(self))]
     async fn create_incoming_payment_request(
         &self,
         unit: &CurrencyUnit,
@@ -274,6 +352,7 @@ impl MintPayment for CdkLdkNode {
 
     /// Get payment quote
     /// Used to get fee and amount required for a payment request
+    #[instrument(skip_all)]
     async fn get_payment_quote(
         &self,
         unit: &CurrencyUnit,
@@ -356,6 +435,7 @@ impl MintPayment for CdkLdkNode {
     }
 
     /// Pay request
+    #[instrument(skip(self))]
     async fn make_payment(
         &self,
         unit: &CurrencyUnit,
@@ -506,29 +586,41 @@ impl MintPayment for CdkLdkNode {
 
     /// Listen for invoices to be paid to the mint
     /// Returns a stream of request_lookup_id once invoices are paid
+    #[instrument(skip(self))]
     async fn wait_any_incoming_payment(
         &self,
     ) -> Result<Pin<Box<dyn Stream<Item = WaitPaymentResponse> + Send>>, Self::Err> {
-        tracing::info!("Starting stream for invoices");
-        let receiver = self
-            .receiver
-            .lock()
-            .await
-            .take()
-            .ok_or(anyhow!("Could not get receiver"))?;
+        tracing::info!("Starting stream for invoices - wait_any_incoming_payment called");
+
+        // Set active flag to indicate stream is active
+        self.wait_invoice_is_active.store(true, Ordering::SeqCst);
+        tracing::debug!("wait_invoice_is_active set to true");
+
+        let receiver = self.receiver.lock().await.take().ok_or_else(|| {
+            tracing::error!("Failed to get receiver from mutex");
+            anyhow!("Could not get receiver")
+        })?;
+
+        tracing::info!("Receiver obtained successfully, creating response stream");
 
         // Transform the String stream into a WaitPaymentResponse stream
-        let response_stream = ReceiverStream::new(receiver).map(|payment_id| {
-            // Use default values for now, these would be populated from actual payment details
-            WaitPaymentResponse {
-                payment_identifier: PaymentIdentifier::CustomId(payment_id.clone()),
-                payment_amount: 0.into(),
-                unit: CurrencyUnit::Sat,
-                payment_id,
-            }
+        let response_stream = ReceiverStream::new(receiver);
+
+        // Create a combined stream that also handles cancellation
+        let cancel_token = self.wait_invoice_cancel_token.clone();
+        let is_active = self.wait_invoice_is_active.clone();
+
+        let stream = Box::pin(response_stream);
+
+        // Set up a task to clean up when the stream is dropped
+        tokio::spawn(async move {
+            cancel_token.cancelled().await;
+            tracing::info!("wait_invoice stream cancelled");
+            is_active.store(false, Ordering::SeqCst);
         });
 
-        Ok(Box::pin(response_stream))
+        tracing::info!("wait_any_incoming_payment returning stream");
+        Ok(stream)
     }
 
     /// Is wait invoice active
@@ -639,7 +731,13 @@ impl MintPayment for CdkLdkNode {
 
 impl Drop for CdkLdkNode {
     fn drop(&mut self) {
+        tracing::info!("Drop called on CdkLdkNode");
         self.wait_invoice_cancel_token.cancel();
-        let _ = self.stop();
+        tracing::debug!("Cancelled wait_invoice token in drop");
+        if let Err(e) = self.stop() {
+            tracing::error!("Error stopping node during drop: {}", e);
+        } else {
+            tracing::info!("Successfully stopped node during drop");
+        }
     }
 }
