@@ -13,7 +13,7 @@ use cdk_common::payment::{
 };
 use cdk_common::util::{hex, unix_time};
 use cdk_common::{Amount, CurrencyUnit, MeltOptions, MeltQuoteState};
-use futures::{Stream, StreamExt};
+use futures::Stream;
 use ldk_node::bitcoin::Network;
 use ldk_node::bitcoin::hashes::Hash;
 use ldk_node::lightning::ln::channelmanager::PaymentId;
@@ -173,7 +173,6 @@ impl CdkLdkNode {
                         break;
                     }
                     event = node.next_event_async() => {
-                        tracing::debug!("Received event: {:?}", event);
                         match event {
                             Event::PaymentReceived {
                                 payment_id,
@@ -193,19 +192,24 @@ impl CdkLdkNode {
                                     let payment_details = node.payment(&payment_id).unwrap();
 
                                     let (payment_identifier, payment_id) = match payment_details.kind {
-                                        PaymentKind::Bolt11 { hash, preimage, secret } => {
+                                        PaymentKind::Bolt11 { hash, .. } => {
                                             (PaymentIdentifier::PaymentHash(hash.0), hash.to_string())
 
 
                                         }
-                                        PaymentKind::Bolt12Offer { hash, preimage, secret, offer_id, payer_note, quantity } => {
+                                        PaymentKind::Bolt12Offer { hash, offer_id, .. } => {
                                             (PaymentIdentifier::OfferId(offer_id.to_string()), hash.unwrap().to_string())
 
                                         }
-                                        _ => todo!()
-
-
-
+                                        k => {
+                                            tracing::warn!("Received payment of kind  {:?} we do not support.", k);
+                        if let Err(err) = node.event_handled() {
+                            tracing::error!("Error handling node event: {}", err);
+                        } else {
+                            tracing::debug!("Successfully handled node event");
+                        }
+                                            continue
+                                        }
                                     };
 
 
@@ -216,8 +220,6 @@ impl CdkLdkNode {
                                         payment_id
 
                                     };
-
-
 
                                     match sender.send(wait_payment_response).await {
                                         Ok(_) => tracing::info!("Successfully sent payment notification to stream"),
@@ -435,7 +437,7 @@ impl MintPayment for CdkLdkNode {
     }
 
     /// Pay request
-    #[instrument(skip(self))]
+    #[instrument(skip(self, options))]
     async fn make_payment(
         &self,
         unit: &CurrencyUnit,
@@ -547,9 +549,15 @@ impl MintPayment for CdkLdkNode {
 
                     match details.status {
                         PaymentStatus::Succeeded => break (MeltQuoteState::Paid, details),
-                        PaymentStatus::Failed => break (MeltQuoteState::Failed, details),
+                        PaymentStatus::Failed => {
+                            tracing::error!("Payment with id {} failed.", payment_id);
+                            break (MeltQuoteState::Failed, details);
+                        }
                         PaymentStatus::Pending => {
                             if start.elapsed() > timeout {
+                                tracing::warn!(
+                                    "Payment has been being for 10 seconds. No longer waiting"
+                                );
                                 break (MeltQuoteState::Pending, details);
                             }
                             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -559,10 +567,13 @@ impl MintPayment for CdkLdkNode {
                 };
 
                 let payment_proof = match payment_details.kind {
-                    PaymentKind::Bolt11 {
+                    PaymentKind::Bolt12Offer {
                         hash: _,
                         preimage,
                         secret: _,
+                        offer_id: _,
+                        payer_note: _,
+                        quantity: _,
                     } => preimage.map(|p| p.to_string()),
                     _ => return Err(anyhow!("Unexpected payment kind").into()),
                 };
@@ -678,22 +689,30 @@ impl MintPayment for CdkLdkNode {
         &self,
         request_lookup_id: &PaymentIdentifier,
     ) -> Result<MakePaymentResponse, Self::Err> {
-        let payment_id_str = match request_lookup_id {
-            PaymentIdentifier::PaymentHash(hash) => hex::encode(hash),
-            PaymentIdentifier::CustomId(id) => id.clone(),
-            _ => return Err(anyhow!("Unsupported payment identifier type").into()),
-        };
-
-        let payment_id = PaymentId(
-            hex::decode(&payment_id_str)?
-                .try_into()
-                .map_err(|_| anyhow!("Invalid payment ID length"))?,
-        );
-
-        let payment_details = self
-            .inner
-            .payment(&payment_id)
-            .ok_or(anyhow!("Payment not found"))?;
+        let payment_details = match request_lookup_id {
+            PaymentIdentifier::PaymentHash(id_hash) => self
+                .inner
+                .list_payments_with_filter(
+                    |p| matches!(&p.kind, PaymentKind::Bolt11 { hash, .. } if &hash.0 == id_hash),
+                )
+                .first()
+                .cloned(),
+            PaymentIdentifier::CustomId(id) => self.inner.payment(&PaymentId(
+                hex::decode(id)?
+                    .try_into()
+                    .map_err(|_| payment::Error::Custom("Invalid hex".to_string()))?,
+            )),
+            _ => {
+                return Ok(MakePaymentResponse {
+                    payment_lookup_id: request_lookup_id.clone(),
+                    status: MeltQuoteState::Unknown,
+                    payment_proof: None,
+                    total_spent: Amount::ZERO,
+                    unit: CurrencyUnit::Msat,
+                });
+            }
+        }
+        .ok_or(anyhow!("Payment not found"))?;
 
         // This check seems reversed in the original code, so I'm fixing it here
         if payment_details.direction != PaymentDirection::Outbound {
