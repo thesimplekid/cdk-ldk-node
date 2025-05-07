@@ -1,9 +1,6 @@
-# CDK-LDK-Node Configuration
+# CDK-LDK-Node Example Configuration
 
 [payment_processor]
-# Lightning backend to use
-# ln_backend = ""
-
 # Host to listen on
 listen_host = "127.0.0.1"
 

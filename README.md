@@ -14,20 +14,18 @@ cargo r --bin cdk-ldk-cli
 
 There are two ways to configure the node:
 
-1. Using a `config.toml` file in the working directory
+1. Using a `config.toml` file in the home directory at `~/.cdk-ldk-node/config.toml`
 2. Using environment variables
 
 Environment variables will take precedence over values in the config file if both are set.
 
-### Config File (config.toml)
+### Config File
 
-Create a `config.toml` file in the working directory by copying the example:
+By default, the application looks for configuration in these locations, in order:
+1. `~/.cdk-ldk-node/config.toml` (preferred)
+2. `./config.toml` (current directory, as a fallback)
 
-```bash
-cp config.toml.example config.toml
-```
-
-Then edit the file to customize your configuration. See the example file for all available options.
+If no configuration file exists, the application will automatically create one with default values at `~/.cdk-ldk-node/config.toml`.
 
 ### Environment Variables
 

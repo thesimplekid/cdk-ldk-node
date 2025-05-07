@@ -41,6 +41,13 @@ pub const ENV_LDK_NODE_PORT: &str = "CDK_LDK_NODE_PORT";
 // TOML configuration file
 const CONFIG_FILENAME: &str = "config.toml";
 
+// Get the default config directory path
+fn get_default_config_dir() -> PathBuf {
+    let mut home_dir = home::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    home_dir.push(".cdk-ldk-node");
+    home_dir
+}
+
 /// Configuration for the CDK LDK Node
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct Config {
@@ -72,9 +79,6 @@ pub struct Config {
 /// Payment processor configuration
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct PaymentProcessorConfig {
-    /// Lightning backend to use
-    pub ln_backend: Option<String>,
-
     /// Host to listen on
     pub listen_host: Option<String>,
 
@@ -157,8 +161,21 @@ impl Config {
         let mut config = Self::default();
 
         // Try to load from config file
-        if let Ok(file_config) = Self::load_from_file() {
-            config = file_config;
+        match Self::load_from_file() {
+            Ok(file_config) => {
+                config = file_config;
+            }
+            Err(e) => {
+                tracing::info!("Could not load config file: {}", e);
+
+                // If file not found, attempt to create the default config file
+                // This is a convenience, but not required to continue
+                if let Err(create_err) = Self::create_default_config_file() {
+                    tracing::warn!("Failed to create default config file: {}", create_err);
+                }
+
+                tracing::info!("Using default configuration");
+            }
         }
 
         // Override with environment variables
@@ -168,14 +185,30 @@ impl Config {
     }
 
     /// Load configuration from config.toml file
+    /// First checks in ~/.cdk-ldk-node/config.toml, then in the current directory
     fn load_from_file() -> Result<Self> {
-        let config_path = Path::new(CONFIG_FILENAME);
+        // Try home directory first
+        let mut home_config_path = get_default_config_dir();
+        home_config_path.push(CONFIG_FILENAME);
 
-        if !config_path.exists() {
-            return Err(anyhow!("Config file not found: {}", CONFIG_FILENAME));
-        }
+        // Try current directory as fallback
+        let current_dir_config_path = Path::new(CONFIG_FILENAME);
 
-        let mut file = File::open(config_path)?;
+        // Check which path exists and use it
+        let config_path = if home_config_path.exists() {
+            home_config_path
+        } else if current_dir_config_path.exists() {
+            current_dir_config_path.to_path_buf()
+        } else {
+            return Err(anyhow!(
+                "Config file not found at {} or in current directory",
+                home_config_path.display()
+            ));
+        };
+
+        tracing::info!("Loading config from {}", config_path.display());
+
+        let mut file = File::open(&config_path)?;
         let mut content = String::new();
         file.read_to_string(&mut content)?;
 
@@ -184,13 +217,69 @@ impl Config {
         Ok(config)
     }
 
-    /// Override configuration with environment variables
-    fn override_with_env(&mut self) {
-        // Payment processor config
-        if let Ok(value) = env::var(ENV_LN_BACKEND) {
-            self.payment_processor.ln_backend = Some(value);
+    /// Create the default configuration file in the home directory
+    /// This will create the .cdk-ldk-node directory if it doesn't exist
+    fn create_default_config_file() -> Result<()> {
+        let config_dir = get_default_config_dir();
+        if !config_dir.exists() {
+            tracing::info!("Creating config directory at {}", config_dir.display());
+            std::fs::create_dir_all(&config_dir)?;
         }
 
+        let config_path = config_dir.join(CONFIG_FILENAME);
+
+        // Skip if the file already exists
+        if config_path.exists() {
+            return Ok(());
+        }
+
+        tracing::info!("Creating default config file at {}", config_path.display());
+
+        let default_config = r#"# CDK-LDK-Node Configuration
+
+[payment_processor]
+# Host to listen on
+listen_host = "127.0.0.1"
+
+# Port to listen on
+listen_port = 8089
+
+[chain_source]
+# Type of chain source (esplora or bitcoinrpc)
+source_type = "esplora"
+
+# Esplora URL (used when source_type = "esplora")
+esplora_url = "https://mutinynet.com/api"
+
+# Bitcoin RPC configuration (used when source_type = "bitcoinrpc")
+[chain_source.bitcoinrpc]
+host = "127.0.0.1"
+port = 18443
+user = "testuser"
+password = "testpass"
+
+[network]
+# Bitcoin network (mainnet, testnet, signet, regtest)
+bitcoin_network = "regtest"
+
+[grpc]
+# GRPC API configuration
+host = "127.0.0.1"
+port = "50051"
+
+[ldk_node]
+# LDK Node configuration
+host = "127.0.0.1"
+port = 8090
+"#;
+
+        std::fs::write(config_path, default_config)?;
+
+        Ok(())
+    }
+
+    /// Override configuration with environment variables
+    fn override_with_env(&mut self) {
         if let Ok(value) = env::var(ENV_LISTEN_HOST) {
             self.payment_processor.listen_host = Some(value);
         }
@@ -347,8 +436,9 @@ impl Config {
     /// Get storage directory path
     pub fn storage_dir_path(&self) -> String {
         self.storage.dir_path.clone().unwrap_or_else(|| {
-            let mut home_dir = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+            let mut home_dir = home::home_dir().unwrap_or_else(|| PathBuf::from("."));
             home_dir.push(".cdk-ldk-node");
+            home_dir.push("ldk-node");
             home_dir.to_string_lossy().to_string()
         })
     }
