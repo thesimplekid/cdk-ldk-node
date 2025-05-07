@@ -1,10 +1,10 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use ldk_node::UserChannelId;
-use ldk_node::bitcoin::Address;
 use ldk_node::bitcoin::secp256k1::PublicKey;
+use ldk_node::bitcoin::Address;
 use ldk_node::lightning::ln::msgs::SocketAddress;
+use ldk_node::UserChannelId;
 use tonic::{Request, Response, Status};
 
 use super::cdk_ldk_management_server::CdkLdkManagement;
