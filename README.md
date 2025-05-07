@@ -5,9 +5,33 @@
 cargo r --bin cdk-ldk-node
 ```
 
-## Configuration Environment Variables
+## To run node CLI:
+```
+cargo r --bin cdk-ldk-cli
+```
 
-You can configure the chain source by setting the following environment variables:
+## Configuration
+
+There are two ways to configure the node:
+
+1. Using a `config.toml` file in the working directory
+2. Using environment variables
+
+Environment variables will take precedence over values in the config file if both are set.
+
+### Config File (config.toml)
+
+Create a `config.toml` file in the working directory by copying the example:
+
+```bash
+cp config.toml.example config.toml
+```
+
+Then edit the file to customize your configuration. See the example file for all available options.
+
+### Environment Variables
+
+You can also configure the node using environment variables. These will override any values set in the config file.
 
 ```bash
 # Set to 'esplora' or 'bitcoinrpc'
@@ -27,25 +51,23 @@ CDK_BITCOIN_NETWORK=regtest
 
 # Storage directory path for Lightning Network state (defaults to ~/.cdk-ldk-node)
 CDK_STORAGE_DIR_PATH=/path/to/data
-```
 
-Other configuration options:
-
-```bash
+# Payment processor settings
 CDK_PAYMENT_PROCESSOR_LISTEN_HOST=127.0.0.1
 CDK_PAYMENT_PROCESSOR_LISTEN_PORT=8089
+
+# GRPC API settings
 CDK_GRPC_HOST=127.0.0.1
 CDK_GRPC_PORT=50051
+
+# LDK Node settings
+CDK_LDK_NODE_HOST=127.0.0.1
+CDK_LDK_NODE_PORT=8090
 ```
 
-## To run node cli:
-```
-cargo r --bin cdk-ldk-cli
-```
+## Integration with CDK-MINT
 
-
-
-To run with cdk-mind add the below to cdk-mintd config file:
+To run with cdk-mintd, add the following to your cdk-mintd config file:
 
 ```toml
 [ln]
@@ -64,5 +86,4 @@ ln_backend = "grpcprocessor"
 supported_units=["sat"]
 addr="http://127.0.0.1"
 port="8089"
-
 ```

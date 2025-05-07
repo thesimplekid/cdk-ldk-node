@@ -1,40 +1,12 @@
-use std::env;
-use std::net::SocketAddr;
-use std::path::PathBuf;
-use std::str::FromStr;
 use std::sync::Arc;
 
-use anyhow::anyhow;
 use cdk_common::common::FeeReserve;
+use cdk_ldk_node::config::Config;
 use cdk_ldk_node::proto::cdk_ldk_management_server::CdkLdkManagementServer;
 use cdk_ldk_node::proto::server::CdkLdkServer;
-use cdk_ldk_node::{BitcoinRpcConfig, ChainSource, GossipSource};
-use ldk_node::bitcoin::Network;
-use ldk_node::lightning::ln::msgs::SocketAddress;
 use tokio::signal;
 use tonic::transport::Server;
 use tracing_subscriber::EnvFilter;
-
-pub const ENV_LN_BACKEND: &str = "CDK_PAYMENT_PROCESSOR_LN_BACKEND";
-pub const ENV_LISTEN_HOST: &str = "CDK_PAYMENT_PROCESSOR_LISTEN_HOST";
-pub const ENV_LISTEN_PORT: &str = "CDK_PAYMENT_PROCESSOR_LISTEN_PORT";
-pub const ENV_PAYMENT_PROCESSOR_TLS_DIR: &str = "CDK_PAYMENT_PROCESSOR_TLS_DIR";
-pub const ENV_GRPC_HOST: &str = "CDK_GRPC_HOST";
-pub const ENV_GRPC_PORT: &str = "CDK_GRPC_PORT";
-
-// Chain source configuration
-pub const ENV_CHAIN_SOURCE: &str = "CDK_CHAIN_SOURCE";
-pub const ENV_ESPLORA_URL: &str = "CDK_ESPLORA_URL";
-pub const ENV_BITCOIN_RPC_HOST: &str = "CDK_BITCOIN_RPC_HOST";
-pub const ENV_BITCOIN_RPC_PORT: &str = "CDK_BITCOIN_RPC_PORT";
-pub const ENV_BITCOIN_RPC_USER: &str = "CDK_BITCOIN_RPC_USER";
-pub const ENV_BITCOIN_RPC_PASS: &str = "CDK_BITCOIN_RPC_PASS";
-
-// Network configuration
-pub const ENV_BITCOIN_NETWORK: &str = "CDK_BITCOIN_NETWORK";
-
-// Storage configuration
-pub const ENV_STORAGE_DIR_PATH: &str = "CDK_STORAGE_DIR_PATH";
 
 fn main() -> anyhow::Result<()> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -59,60 +31,18 @@ fn main() -> anyhow::Result<()> {
 
         tracing_subscriber::fmt().with_env_filter(env_filter).init();
 
-        let listen_addr: String = env::var(ENV_LISTEN_HOST).unwrap_or("127.0.0.1".to_string());
-        let listen_port: u16 = env::var(ENV_LISTEN_PORT)
-            .unwrap_or("8089".to_string())
-            .parse()?;
+        // Load configuration
+        let config = Config::load()?;
 
-        // Configure chain source based on environment variables
-        let chain_source_type = env::var(ENV_CHAIN_SOURCE).unwrap_or("esplora".to_string());
+        // Extract configuration values
+        let listen_addr = config.payment_processor_listen_host();
+        let listen_port = config.payment_processor_listen_port();
+        let chain_source = config.chain_source();
+        let network = config.bitcoin_network();
+        let storage_dir_path = config.storage_dir_path();
+        let gossip_source = config.gossip_source();
 
-        let chain_source = if chain_source_type.to_lowercase() == "bitcoinrpc" {
-            // Configure Bitcoin RPC
-            let rpc_host = env::var(ENV_BITCOIN_RPC_HOST).unwrap_or("127.0.0.1".to_string());
-            let rpc_port: u16 = env::var(ENV_BITCOIN_RPC_PORT)
-                .unwrap_or("18443".to_string())
-                .parse()?;
-            let rpc_user = env::var(ENV_BITCOIN_RPC_USER).unwrap_or("testuser".to_string());
-            let rpc_pass = env::var(ENV_BITCOIN_RPC_PASS).unwrap_or("testpass".to_string());
-
-            ChainSource::BitcoinRpc(BitcoinRpcConfig {
-                host: rpc_host,
-                port: rpc_port,
-                user: rpc_user,
-                password: rpc_pass,
-            })
-        } else {
-            // Default to Esplora
-            let esplora_url =
-                env::var(ENV_ESPLORA_URL).unwrap_or("https://mutinynet.com/api".to_string());
-
-            ChainSource::Esplora(esplora_url)
-        };
-
-        // Configure Bitcoin network based on environment variable
-        let network = match env::var(ENV_BITCOIN_NETWORK)
-            .unwrap_or("regtest".to_string())
-            .to_lowercase()
-            .as_str()
-        {
-            "mainnet" | "bitcoin" => Network::Bitcoin,
-            "testnet" => Network::Testnet,
-            "signet" => Network::Signet,
-            _ => Network::Regtest, // Default to Regtest
-        };
-
-        // Configure storage directory path
-        let storage_dir_path = env::var(ENV_STORAGE_DIR_PATH).unwrap_or_else(|_| {
-            let mut home_dir = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-            home_dir.push(".cdk-ldk-node");
-            home_dir.to_string_lossy().to_string()
-        });
-
-        let gossip_source = GossipSource::P2P;
-
-        let ldk_node_listen_addr = SocketAddress::from_str("127.0.0.1:8090")
-            .map_err(|_| anyhow!("Invalid socket address"))?;
+        let ldk_node_listen_addr = config.ldk_node_listen_addr()?;
 
         let cdk_ldk = cdk_ldk_node::CdkLdkNode::new(
             network,
@@ -137,17 +67,12 @@ fn main() -> anyhow::Result<()> {
             listen_port,
         )?;
 
-        let tls_dir: Option<PathBuf> = env::var(ENV_PAYMENT_PROCESSOR_TLS_DIR)
-            .ok()
-            .map(PathBuf::from);
+        let tls_dir = config.payment_processor_tls_dir();
 
         payment_server.start(tls_dir).await?;
 
         // Start gRPC management server
-        let grpc_host = env::var(ENV_GRPC_HOST).unwrap_or("127.0.0.1".to_string());
-        let grpc_port = env::var(ENV_GRPC_PORT).unwrap_or("50051".to_string());
-
-        let grpc_addr = format!("{}:{}", grpc_host, grpc_port).parse::<SocketAddr>()?;
+        let grpc_addr = config.grpc_socket_addr()?;
         let management_service = CdkLdkServer::new(cdk_ldk);
 
         let grpc_server = Server::builder()

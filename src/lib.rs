@@ -1,6 +1,6 @@
 use std::pin::Pin;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use anyhow::anyhow;
 use async_trait::async_trait;
@@ -14,8 +14,8 @@ use cdk_common::payment::{
 use cdk_common::util::{hex, unix_time};
 use cdk_common::{Amount, CurrencyUnit, MeltOptions, MeltQuoteState};
 use futures::Stream;
-use ldk_node::bitcoin::Network;
 use ldk_node::bitcoin::hashes::Hash;
+use ldk_node::bitcoin::Network;
 use ldk_node::lightning::ln::channelmanager::PaymentId;
 use ldk_node::lightning::ln::msgs::SocketAddress;
 use ldk_node::lightning_invoice::{Bolt11InvoiceDescription, Description};
@@ -28,6 +28,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 use tracing::instrument;
 
+pub mod config;
 pub mod proto;
 
 pub struct CdkLdkNode {
@@ -348,7 +349,6 @@ impl MintPayment for CdkLdkNode {
                     amount,
 
                     unix_expiry,
-                    single_use: _,
                 } = *bolt12_options;
 
                 let time = unix_expiry.map(|t| t - unix_time()).unwrap_or(36000);

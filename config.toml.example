@@ -1,0 +1,47 @@
+# CDK-LDK-Node Configuration
+
+[payment_processor]
+# Lightning backend to use
+# ln_backend = ""
+
+# Host to listen on
+listen_host = "127.0.0.1"
+
+# Port to listen on
+listen_port = 8089
+
+# TLS directory for certificates (optional)
+# tls_dir = "/path/to/tls/certs"
+
+[chain_source]
+# Type of chain source (esplora or bitcoinrpc)
+source_type = "esplora"
+
+# Esplora URL (used when source_type = "esplora")
+esplora_url = "https://mutinynet.com/api"
+
+# Bitcoin RPC configuration (used when source_type = "bitcoinrpc")
+[chain_source.bitcoinrpc]
+host = "127.0.0.1"
+port = 18443
+user = "testuser"
+password = "testpass"
+
+[network]
+# Bitcoin network (mainnet, testnet, signet, regtest)
+bitcoin_network = "regtest"
+
+[grpc]
+# GRPC API configuration
+host = "127.0.0.1"
+port = "50051"
+
+[storage]
+# Directory path for storage
+# If not specified, defaults to $HOME/.cdk-ldk-node
+# dir_path = "/path/to/storage"
+
+[ldk_node]
+# LDK Node configuration
+host = "127.0.0.1"
+port = 8090
