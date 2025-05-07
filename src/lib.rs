@@ -319,8 +319,9 @@ impl MintPayment for CdkLdkNode {
                     .map(|t| t - unix_time())
                     .unwrap_or(36000);
 
-                let description =
-                    Bolt11InvoiceDescription::Direct(Description::new(description).unwrap());
+                let description = Bolt11InvoiceDescription::Direct(
+                    Description::new(description).map_err(|_| anyhow!("Invalid description"))?,
+                );
 
                 let payment = self
                     .inner
@@ -497,12 +498,18 @@ impl MintPayment for CdkLdkNode {
                         .inner
                         .bolt11_payment()
                         .send_using_amount(&bolt11, amountless.amount_msat.into(), send_params)
-                        .unwrap(),
+                        .or_else(|err| {
+                            tracing::error!("Could not send send amountless bolt11: {}", err);
+                            Err(anyhow!("Could not send bolt11 without amount"))
+                        })?,
                     None => self
                         .inner
                         .bolt11_payment()
                         .send(&bolt11, send_params)
-                        .unwrap(),
+                        .or_else(|err| {
+                            tracing::error!("Could not send bolt11 {}", err);
+                            Err(anyhow!("Could not send bolt11"))
+                        })?,
                     _ => return Err(payment::Error::UnsupportedPaymentOption),
                 };
 
@@ -518,8 +525,15 @@ impl MintPayment for CdkLdkNode {
 
                     match details.status {
                         PaymentStatus::Succeeded => break (MeltQuoteState::Paid, details),
-                        PaymentStatus::Failed => break (MeltQuoteState::Failed, details),
+                        PaymentStatus::Failed => {
+                            tracing::error!("Failed to pay bolt11 payment.");
+                            break (MeltQuoteState::Failed, details);
+                        }
                         PaymentStatus::Pending => {
+                            tracing::warn!(
+                                "Paying bolt11 exceded timeout 10 seconds no longer waitning."
+                            );
+
                             if start.elapsed() > timeout {
                                 break (MeltQuoteState::Pending, details);
                             }
