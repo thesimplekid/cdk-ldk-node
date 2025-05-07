@@ -482,19 +482,25 @@ impl MintPayment for CdkLdkNode {
             OutgoingPaymentOptions::Bolt11(bolt11_options) => {
                 let bolt11 = bolt11_options.bolt11;
 
-                let send_params = match bolt11_options.max_fee_amount.map(|f| {
-                    to_unit(f, unit, &CurrencyUnit::Msat)
-                        .map(|amount_msat| SendingParameters {
+                let send_params = match bolt11_options
+                    .max_fee_amount
+                    .map(|f| {
+                        to_unit(f, unit, &CurrencyUnit::Msat).map(|amount_msat| SendingParameters {
                             max_total_routing_fee_msat: Some(Some(amount_msat.into())),
                             max_channel_saturation_power_of_half: None,
                             max_total_cltv_expiry_delta: None,
                             max_path_count: None,
                         })
-                }).transpose() {
+                    })
+                    .transpose()
+                {
                     Ok(params) => params,
                     Err(err) => {
                         tracing::error!("Failed to convert fee amount: {}", err);
-                        return Err(payment::Error::Custom(format!("Invalid fee amount: {}", err)));
+                        return Err(payment::Error::Custom(format!(
+                            "Invalid fee amount: {}",
+                            err
+                        )));
                     }
                 };
 
@@ -503,17 +509,17 @@ impl MintPayment for CdkLdkNode {
                         .inner
                         .bolt11_payment()
                         .send_using_amount(&bolt11, amountless.amount_msat.into(), send_params)
-                        .or_else(|err| {
+                        .map_err(|err| {
                             tracing::error!("Could not send send amountless bolt11: {}", err);
-                            Err(anyhow!("Could not send bolt11 without amount"))
+                            anyhow!("Could not send bolt11 without amount")
                         })?,
                     None => self
                         .inner
                         .bolt11_payment()
                         .send(&bolt11, send_params)
-                        .or_else(|err| {
+                        .map_err(|err| {
                             tracing::error!("Could not send bolt11 {}", err);
-                            Err(anyhow!("Could not send bolt11"))
+                            anyhow!("Could not send bolt11")
                         })?,
                     _ => return Err(payment::Error::UnsupportedPaymentOption),
                 };
@@ -536,7 +542,7 @@ impl MintPayment for CdkLdkNode {
                         }
                         PaymentStatus::Pending => {
                             tracing::warn!(
-                                "Paying bolt11 exceded timeout 10 seconds no longer waitning."
+                                "Paying bolt11 exceeded timeout 10 seconds no longer waitning."
                             );
 
                             if start.elapsed() > timeout {

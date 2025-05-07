@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
+use anyhow::anyhow;
 use cdk_common::common::FeeReserve;
 use cdk_ldk_node::proto::cdk_ldk_management_server::CdkLdkManagementServer;
 use cdk_ldk_node::proto::server::CdkLdkServer;
@@ -110,7 +111,8 @@ fn main() -> anyhow::Result<()> {
 
         let gossip_source = GossipSource::P2P;
 
-        let ldk_node_listen_addr = SocketAddress::from_str(&format!("127.0.0.1:8090")).unwrap();
+        let ldk_node_listen_addr = SocketAddress::from_str("127.0.0.1:8090")
+            .map_err(|_| anyhow!("Invalid socket address"))?;
 
         let cdk_ldk = cdk_ldk_node::CdkLdkNode::new(
             network,
