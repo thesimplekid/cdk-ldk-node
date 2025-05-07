@@ -482,16 +482,21 @@ impl MintPayment for CdkLdkNode {
             OutgoingPaymentOptions::Bolt11(bolt11_options) => {
                 let bolt11 = bolt11_options.bolt11;
 
-                let send_params = bolt11_options.max_fee_amount.map(|f| {
-                    let amount_msat = to_unit(f, unit, &CurrencyUnit::Msat).unwrap();
-
-                    SendingParameters {
-                        max_total_routing_fee_msat: Some(Some(amount_msat.into())),
-                        max_channel_saturation_power_of_half: None,
-                        max_total_cltv_expiry_delta: None,
-                        max_path_count: None,
+                let send_params = match bolt11_options.max_fee_amount.map(|f| {
+                    to_unit(f, unit, &CurrencyUnit::Msat)
+                        .map(|amount_msat| SendingParameters {
+                            max_total_routing_fee_msat: Some(Some(amount_msat.into())),
+                            max_channel_saturation_power_of_half: None,
+                            max_total_cltv_expiry_delta: None,
+                            max_path_count: None,
+                        })
+                }).transpose() {
+                    Ok(params) => params,
+                    Err(err) => {
+                        tracing::error!("Failed to convert fee amount: {}", err);
+                        return Err(payment::Error::Custom(format!("Invalid fee amount: {}", err)));
                     }
-                });
+                };
 
                 let payment_id = match bolt11_options.melt_options {
                     Some(MeltOptions::Amountless { amountless }) => self
