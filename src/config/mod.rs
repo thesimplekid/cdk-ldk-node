@@ -38,6 +38,10 @@ pub const ENV_STORAGE_DIR_PATH: &str = "CDK_STORAGE_DIR_PATH";
 pub const ENV_LDK_NODE_HOST: &str = "CDK_LDK_NODE_HOST";
 pub const ENV_LDK_NODE_PORT: &str = "CDK_LDK_NODE_PORT";
 
+// Gossip source configuration
+pub const ENV_GOSSIP_SOURCE_TYPE: &str = "CDK_GOSSIP_SOURCE_TYPE";
+pub const ENV_RGS_URL: &str = "CDK_RGS_URL";
+
 // TOML configuration file
 const CONFIG_FILENAME: &str = "config.toml";
 
@@ -74,6 +78,10 @@ pub struct Config {
     /// LDK Node configuration
     #[serde(default)]
     pub ldk_node: LdkNodeConfig,
+
+    /// Gossip source configuration
+    #[serde(default)]
+    pub gossip_source: GossipSourceConfig,
 }
 
 /// Payment processor configuration
@@ -151,6 +159,13 @@ pub struct LdkNodeConfig {
 
     /// Port to listen on
     pub port: Option<u16>,
+}
+
+/// Gossip source configuration
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct GossipSourceConfig {
+    /// Rapid Gossip Sync URL (used when source_type = "rgs")
+    pub rgs_url: Option<String>,
 }
 
 impl Config {
@@ -271,6 +286,21 @@ port = "50051"
 # LDK Node configuration
 host = "127.0.0.1"
 port = 8090
+
+[gossip_source]
+# Type of gossip source (p2p or rgs)
+# - p2p: Use peer-to-peer gossip (default)
+# - rgs: Use Rapid Gossip Sync from a URL
+source_type = "p2p"
+
+# Rapid Gossip Sync URL (used when source_type = "rgs")
+# Uncomment and set this only if using source_type = "rgs"
+# rgs_url = "https://rapidsync.example.com"
+
+# Example for using Rapid Gossip Sync:
+# [gossip_source]
+# source_type = "rgs"
+# rgs_url = "https://mutinynet.com/api/graphql"
 "#;
 
         std::fs::write(config_path, default_config)?;
@@ -349,6 +379,10 @@ port = 8090
             if let Ok(port) = value.parse::<u16>() {
                 self.ldk_node.port = Some(port);
             }
+        }
+
+        if let Ok(value) = env::var(ENV_RGS_URL) {
+            self.gossip_source.rgs_url = Some(value);
         }
     }
 
@@ -456,9 +490,13 @@ port = 8090
             .map_err(|_| anyhow!("Invalid socket address"))
     }
 
-    /// Get gossip source (currently always P2P)
+    /// Get gossip source (RapidGossipSync if URL is provided, otherwise P2P)
     pub fn gossip_source(&self) -> GossipSource {
-        GossipSource::P2P
+        if let Some(rgs_url) = self.gossip_source.rgs_url.clone() {
+            GossipSource::RapidGossipSync(rgs_url)
+        } else {
+            GossipSource::P2P
+        }
     }
 
     /// Get GRPC host

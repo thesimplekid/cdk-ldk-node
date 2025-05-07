@@ -42,3 +42,7 @@ port = "50051"
 # LDK Node configuration
 host = "127.0.0.1"
 port = 8090
+
+# Example for using Rapid Gossip Sync:
+# [gossip_source]
+# rgs_url = "https://rapidsync.lightningdevkit.org/snapshot"
