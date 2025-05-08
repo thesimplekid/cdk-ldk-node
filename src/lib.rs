@@ -13,7 +13,7 @@ use cdk_common::payment::{
 };
 use cdk_common::util::{hex, unix_time};
 use cdk_common::{Amount, CurrencyUnit, MeltOptions, MeltQuoteState};
-use futures::Stream;
+use futures::{Stream, StreamExt};
 use ldk_node::bitcoin::hashes::Hash;
 use ldk_node::bitcoin::Network;
 use ldk_node::lightning::ln::channelmanager::PaymentId;
@@ -23,8 +23,7 @@ use ldk_node::lightning_types::payment::PaymentHash;
 use ldk_node::payment::{PaymentDirection, PaymentKind, PaymentStatus, SendingParameters};
 use ldk_node::{Builder, Event, Node};
 use tokio::runtime::Runtime;
-use tokio::sync::Mutex;
-use tokio_stream::wrappers::ReceiverStream;
+use tokio_stream::wrappers::BroadcastStream;
 use tokio_util::sync::CancellationToken;
 use tracing::instrument;
 
@@ -36,8 +35,8 @@ pub struct CdkLdkNode {
     fee_reserve: FeeReserve,
     wait_invoice_cancel_token: CancellationToken,
     wait_invoice_is_active: Arc<AtomicBool>,
-    sender: tokio::sync::mpsc::Sender<WaitPaymentResponse>,
-    receiver: Arc<Mutex<Option<tokio::sync::mpsc::Receiver<WaitPaymentResponse>>>>,
+    sender: tokio::sync::broadcast::Sender<WaitPaymentResponse>,
+    receiver: Arc<tokio::sync::broadcast::Receiver<WaitPaymentResponse>>,
     events_cancel_token: CancellationToken,
 }
 
@@ -104,7 +103,7 @@ impl CdkLdkNode {
         let node = builder.build()?;
 
         tracing::info!("Creating tokio channel for payment notifications");
-        let (sender, receiver) = tokio::sync::mpsc::channel(8);
+        let (sender, receiver) = tokio::sync::broadcast::channel(8);
 
         let id = node.node_id();
 
@@ -119,7 +118,7 @@ impl CdkLdkNode {
             wait_invoice_cancel_token: CancellationToken::new(),
             wait_invoice_is_active: Arc::new(AtomicBool::new(false)),
             sender,
-            receiver: Arc::new(Mutex::new(Some(receiver))),
+            receiver: Arc::new(receiver),
             events_cancel_token: CancellationToken::new(),
         })
     }
@@ -162,7 +161,7 @@ impl CdkLdkNode {
     /// Handle payment received event
     async fn handle_payment_received(
         node: &Arc<Node>,
-        sender: &tokio::sync::mpsc::Sender<WaitPaymentResponse>,
+        sender: &tokio::sync::broadcast::Sender<WaitPaymentResponse>,
         payment_id: Option<PaymentId>,
         payment_hash: PaymentHash,
         amount_msat: u64,
@@ -226,7 +225,7 @@ impl CdkLdkNode {
             payment_id,
         };
 
-        match sender.send(wait_payment_response).await {
+        match sender.send(wait_payment_response) {
             Ok(_) => tracing::info!("Successfully sent payment notification to stream"),
             Err(err) => tracing::error!(
                 "Could not send payment received notification on channel: {}",
@@ -666,15 +665,23 @@ impl MintPayment for CdkLdkNode {
         self.wait_invoice_is_active.store(true, Ordering::SeqCst);
         tracing::debug!("wait_invoice_is_active set to true");
 
-        let receiver = self.receiver.lock().await.take().ok_or_else(|| {
-            tracing::error!("Failed to get receiver from mutex");
-            anyhow!("Could not get receiver")
-        })?;
+        let receiver = self.receiver.clone();
 
         tracing::info!("Receiver obtained successfully, creating response stream");
 
         // Transform the String stream into a WaitPaymentResponse stream
-        let response_stream = ReceiverStream::new(receiver);
+        let response_stream = BroadcastStream::new(receiver.resubscribe());
+
+        // Map the stream to handle BroadcastStreamRecvError
+        let response_stream = response_stream.filter_map(|result| async move {
+            match result {
+                Ok(payment) => Some(payment),
+                Err(err) => {
+                    tracing::warn!("Error in broadcast stream: {}", err);
+                    None
+                }
+            }
+        });
 
         // Create a combined stream that also handles cancellation
         let cancel_token = self.wait_invoice_cancel_token.clone();
