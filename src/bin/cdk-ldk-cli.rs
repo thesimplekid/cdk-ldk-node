@@ -87,11 +87,26 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::GetInfo => {
             let info = client.get_info().await?;
-            println!("{:?}", info);
+            println!("Node Information:");
+            println!("----------------");
+            println!("Node ID: {}", info.node_id);
+            println!("Alias: {}", info.alias);
+            println!(
+                "Listening Addresses: {}",
+                info.listening_addresses.join(", ")
+            );
+            println!(
+                "Announcement Addresses: {}",
+                info.announcement_addresses.join(", ")
+            );
+            println!("Connected peer count: {}", info.num_connected_peers);
+            println!("Peer count: {}", info.num_peers);
+            println!("Connected channel count: {}", info.num_active_channels);
+            println!("Inactive channel count: {}", info.num_inactive_channels);
         }
         Commands::GetNewAddress => {
             let address = client.get_new_address().await?;
-            println!("New address: {}", address);
+            println!("New address: {address}");
         }
         Commands::OpenChannel {
             node_id,
@@ -103,7 +118,7 @@ async fn main() -> Result<()> {
             let channel_id = client
                 .open_channel(node_id, address, port, amount_msats, push_msats)
                 .await?;
-            println!("Opened channel with ID: {}", channel_id);
+            println!("Opened channel with ID: {channel_id}");
         }
         Commands::CloseChannel {
             channel_id,
@@ -132,7 +147,7 @@ async fn main() -> Result<()> {
             address,
         } => {
             let txid = client.send_onchain(amount_sat, address).await?;
-            println!("Transaction sent with txid: {}", txid);
+            println!("Transaction sent with txid: {txid}");
         }
     }
 

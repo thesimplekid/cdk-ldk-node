@@ -496,10 +496,7 @@ impl MintPayment for CdkLdkNode {
                     Ok(params) => params,
                     Err(err) => {
                         tracing::error!("Failed to convert fee amount: {}", err);
-                        return Err(payment::Error::Custom(format!(
-                            "Invalid fee amount: {}",
-                            err
-                        )));
+                        return Err(payment::Error::Custom(format!("Invalid fee amount: {err}")));
                     }
                 };
 
