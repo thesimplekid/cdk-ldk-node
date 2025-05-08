@@ -17,9 +17,11 @@ message GetInfoResponse {
   string node_id = 1;
   string alias = 2;
   uint64 num_peers = 3;
-  uint64 num_channels = 4;
-  repeated string announcement_addresses = 5;
-  repeated string listening_addresses = 6;
+  uint64 num_connected_peers = 4;
+  uint64 num_active_channels = 5;
+  uint64 num_inactive_channels = 6;
+  repeated string announcement_addresses = 7;
+  repeated string listening_addresses = 8;
 }
 
 message GetNewAddressRequest {}

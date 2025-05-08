@@ -99,8 +99,10 @@ async fn main() -> Result<()> {
                 "Announcement Addresses: {}",
                 info.announcement_addresses.join(", ")
             );
+            println!("Connected peer count: {}", info.num_connected_peers);
             println!("Peer count: {}", info.num_peers);
-            println!("Channel count: {}", info.num_channels);
+            println!("Connected channel count: {}", info.num_active_channels);
+            println!("Inactive channel count: {}", info.num_inactive_channels);
         }
         Commands::GetNewAddress => {
             let address = client.get_new_address().await?;

@@ -52,8 +52,29 @@ impl CdkLdkManagement for CdkLdkServer {
             .map(|a| a.to_string())
             .collect();
 
-        let num_peers = node.list_peers().iter().count() as u64;
-        let num_channels = node.list_channels().iter().count() as u64;
+        let (num_peers, num_connected_peers) =
+            node.list_peers()
+                .iter()
+                .fold((0, 0), |(mut peers, mut connected), p| {
+                    if p.is_connected {
+                        connected += 1;
+                    }
+                    peers += 1;
+
+                    (peers, connected)
+                });
+
+        let (num_active_channels, num_inactive_channels) =
+            node.list_channels()
+                .iter()
+                .fold((0, 0), |(mut active, mut inactive), c| {
+                    if c.is_usable {
+                        active += 1;
+                    } else {
+                        inactive += 1;
+                    }
+                    (active, inactive)
+                });
 
         Ok(Response::new(GetInfoResponse {
             node_id: node_id.to_string(),
@@ -61,7 +82,9 @@ impl CdkLdkManagement for CdkLdkServer {
             announcement_addresses,
             listening_addresses,
             num_peers,
-            num_channels,
+            num_connected_peers,
+            num_active_channels,
+            num_inactive_channels,
         }))
     }
 
@@ -90,11 +113,19 @@ impl CdkLdkManagement for CdkLdkServer {
         let socket_addr = SocketAddress::from_str(&format!("{}:{}", req.address, req.port))
             .map_err(|e| Status::internal(e.to_string()))?;
 
+        let pubkey =
+            PublicKey::from_str(&req.node_id).map_err(|e| Status::internal(e.to_string()))?;
+
+        self.node
+            .inner
+            .connect(pubkey, socket_addr.clone(), true)
+            .map_err(|e| Status::internal(e.to_string()))?;
+
         let channel = self
             .node
             .inner
             .open_announced_channel(
-                PublicKey::from_str(&req.node_id).map_err(|e| Status::internal(e.to_string()))?,
+                pubkey,
                 socket_addr,
                 req.amount_msats,
                 req.push_to_counter_party_msats,
