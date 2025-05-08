@@ -106,7 +106,7 @@ async fn main() -> Result<()> {
         }
         Commands::GetNewAddress => {
             let address = client.get_new_address().await?;
-            println!("New address: {}", address);
+            println!("New address: {address}");
         }
         Commands::OpenChannel {
             node_id,
@@ -118,7 +118,7 @@ async fn main() -> Result<()> {
             let channel_id = client
                 .open_channel(node_id, address, port, amount_msats, push_msats)
                 .await?;
-            println!("Opened channel with ID: {}", channel_id);
+            println!("Opened channel with ID: {channel_id}");
         }
         Commands::CloseChannel {
             channel_id,
@@ -147,7 +147,7 @@ async fn main() -> Result<()> {
             address,
         } => {
             let txid = client.send_onchain(amount_sat, address).await?;
-            println!("Transaction sent with txid: {}", txid);
+            println!("Transaction sent with txid: {txid}");
         }
     }
 

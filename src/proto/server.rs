@@ -47,7 +47,7 @@ impl CdkLdkManagement for CdkLdkServer {
 
         let listening_addresses = config
             .announcement_addresses
-            .unwrap_or(vec![])
+            .unwrap_or_default()
             .iter()
             .map(|a| a.to_string())
             .collect();
@@ -147,12 +147,12 @@ impl CdkLdkManagement for CdkLdkServer {
         let node_pubkey = req
             .node_pubkey
             .parse()
-            .map_err(|e| Status::invalid_argument(format!("Invalid node pubkey: {}", e)))?;
+            .map_err(|e| Status::invalid_argument(format!("Invalid node pubkey: {e}")))?;
 
         let channel_id: u128 = req
             .channel_id
             .parse()
-            .map_err(|e| Status::invalid_argument(format!("Invalid channel id: {}", e)))?;
+            .map_err(|e| Status::invalid_argument(format!("Invalid channel id: {e}")))?;
 
         let channel_id = UserChannelId(channel_id);
 
