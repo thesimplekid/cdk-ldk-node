@@ -1,3 +1,4 @@
 /target
 .aider*
 Cargo.lock
+.pre-commit-config.yaml

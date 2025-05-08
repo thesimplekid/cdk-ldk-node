@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  release:
+    types: [created]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  self-care:
+    name: Flake self-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Nix flake inputs
+        uses: DeterminateSystems/flake-checker-action@v7
+        with:
+          fail-mode: true
+
+  pre-commit-checks:
+    name: "Cargo fmt, typos"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v11
+      - name: Nix Cache
+        uses: DeterminateSystems/magic-nix-cache-action@v6
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+      - name: Cargo fmt
+        run: |
+          nix develop -i -L .#nightly --command bash -c '
+            # Force use of Nix-provided rustfmt
+            export RUSTFMT=$(command -v rustfmt)
+            cargo fmt --check
+          '
+      - name: typos
+        run: nix develop -i -L .#nightly --command typos
+  clippy:
+    name: "Stable build, clippy and test"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: pre-commit-checks
+    strategy:
+      matrix:
+        build-args:
+          [
+            --bin cdk-ldk-node,
+            --bin cdk-ldk-cli,
+            -p cdk-ldk-node,
+          ]
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v11
+      - name: Nix Cache
+        uses: DeterminateSystems/magic-nix-cache-action@v6
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+      - name: Clippy
+        run: nix develop -i -L .#stable --command cargo clippy ${{ matrix.build-args }} -- -D warnings
+      - name: Test
+        run: nix develop -i -L .#stable --command cargo test ${{ matrix.build-args }}
+  
