@@ -91,25 +91,16 @@ async fn main() -> Result<()> {
             println!("----------------");
             println!("Node ID: {}", info.node_id);
             println!("Alias: {}", info.alias);
-            println!("Network: {}", info.network);
-            println!("Listening Addresses: {}", info.listening_addresses.join(", "));
-            println!("Synced: {}", if info.synced { "Yes" } else { "No" });
-            
-            if !info.channels.is_empty() {
-                println!("\nChannels:");
-                println!("--------");
-                for (i, channel) in info.channels.iter().enumerate() {
-                    println!("Channel #{}", i + 1);
-                    println!("  Channel ID: {}", channel.channel_id);
-                    println!("  Counterparty: {}", channel.counterparty_node_id);
-                    println!("  Status: {}", channel.status);
-                    println!("  Balance (local/remote): {} / {} msats", 
-                        channel.balance_msat, channel.outbound_capacity_msat);
-                    println!();
-                }
-            } else {
-                println!("\nNo active channels");
-            }
+            println!(
+                "Listening Addresses: {}",
+                info.listening_addresses.join(", ")
+            );
+            println!(
+                "Announcement Addresses: {}",
+                info.announcement_addresses.join(", ")
+            );
+            println!("Peer count: {}", info.num_peers);
+            println!("Channel count: {}", info.num_channels);
         }
         Commands::GetNewAddress => {
             let address = client.get_new_address().await?;

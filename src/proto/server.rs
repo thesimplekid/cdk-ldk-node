@@ -27,7 +27,42 @@ impl CdkLdkManagement for CdkLdkServer {
         &self,
         _request: Request<GetInfoRequest>,
     ) -> Result<Response<GetInfoResponse>, Status> {
-        Ok(Response::new(GetInfoResponse {}))
+        let node = self.node.inner.as_ref();
+
+        let node_id = node.node_id();
+        let alias = node
+            .node_alias()
+            .map(|a| a.to_string())
+            .unwrap_or("".to_string());
+
+        let config = self.node.inner.config();
+
+        let announcement_addresses = config
+            .announcement_addresses
+            .as_ref()
+            .unwrap_or(&vec![])
+            .iter()
+            .map(|a| a.to_string())
+            .collect();
+
+        let listening_addresses = config
+            .announcement_addresses
+            .unwrap_or(vec![])
+            .iter()
+            .map(|a| a.to_string())
+            .collect();
+
+        let num_peers = node.list_peers().iter().count() as u64;
+        let num_channels = node.list_channels().iter().count() as u64;
+
+        Ok(Response::new(GetInfoResponse {
+            node_id: node_id.to_string(),
+            alias,
+            announcement_addresses,
+            listening_addresses,
+            num_peers,
+            num_channels,
+        }))
     }
 
     async fn get_new_address(
