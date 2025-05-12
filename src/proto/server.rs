@@ -207,7 +207,7 @@ impl CdkLdkManagement for CdkLdkServer {
 
         // Parse the BOLT11 invoice
         let bolt11 = ldk_node::lightning_invoice::Bolt11Invoice::from_str(&req.invoice)
-            .map_err(|e| Status::invalid_argument(format!("Invalid BOLT11 invoice: {}", e)))?;
+            .map_err(|e| Status::invalid_argument(format!("Invalid BOLT11 invoice: {e}")))?;
 
         // Determine sending parameters
         let send_params = None; // Use default parameters
@@ -219,14 +219,14 @@ impl CdkLdkManagement for CdkLdkServer {
                 .inner
                 .bolt11_payment()
                 .send_using_amount(&bolt11, amount_msats, send_params)
-                .map_err(|e| Status::internal(format!("Failed to pay invoice: {}", e)))?
+                .map_err(|e| Status::internal(format!("Failed to pay invoice: {e}")))?
         } else {
             // Send with the amount specified in the invoice
             self.node
                 .inner
                 .bolt11_payment()
                 .send(&bolt11, send_params)
-                .map_err(|e| Status::internal(format!("Failed to pay invoice: {}", e)))?
+                .map_err(|e| Status::internal(format!("Failed to pay invoice: {e}")))?
         };
 
         // Check payment status for up to 10 seconds
@@ -298,7 +298,7 @@ impl CdkLdkManagement for CdkLdkServer {
 
         // Parse the BOLT12 offer
         let offer = ldk_node::lightning::offers::offer::Offer::from_str(&req.offer)
-            .map_err(|e| Status::invalid_argument(format!("Invalid BOLT12 offer: {:?}", e)))?;
+            .map_err(|e| Status::invalid_argument(format!("Invalid BOLT12 offer: {e:?}")))?;
 
         // Send the payment with the specified amount
         let payment_id = self
@@ -306,7 +306,7 @@ impl CdkLdkManagement for CdkLdkServer {
             .inner
             .bolt12_payment()
             .send_using_amount(&offer, req.amount_msats, None, None)
-            .map_err(|e| Status::internal(format!("Failed to pay offer: {}", e)))?;
+            .map_err(|e| Status::internal(format!("Failed to pay offer: {e}")))?;
 
         // Check payment status for up to 10 seconds
         let start = std::time::Instant::now();
@@ -367,7 +367,7 @@ impl CdkLdkManagement for CdkLdkServer {
         Ok(Response::new(PaymentResponse {
             payment_hash,
             payment_preimage: preimage,
-            fee_msats: fee_msats,
+            fee_msats,
             success: true,
             failure_reason: None,
         }))
@@ -394,7 +394,7 @@ impl CdkLdkManagement for CdkLdkServer {
             .inner
             .bolt11_payment()
             .receive(req.amount_msats, &description, expiry_seconds)
-            .map_err(|e| Status::internal(format!("Failed to create invoice: {}", e)))?;
+            .map_err(|e| Status::internal(format!("Failed to create invoice: {e}")))?;
 
         // Get current time for expiry calculation
         let current_time = std::time::SystemTime::now()
@@ -424,7 +424,7 @@ impl CdkLdkManagement for CdkLdkServer {
                 .inner
                 .bolt12_payment()
                 .receive(amount_msats, &req.description, Some(expiry_seconds), None)
-                .map_err(|e| Status::internal(format!("Failed to create offer: {}", e)))?
+                .map_err(|e| Status::internal(format!("Failed to create offer: {e}")))?
         } else {
             // Create a variable amount offer
             self.node
@@ -432,7 +432,7 @@ impl CdkLdkManagement for CdkLdkServer {
                 .bolt12_payment()
                 .receive_variable_amount(&req.description, Some(expiry_seconds))
                 .map_err(|e| {
-                    Status::internal(format!("Failed to create variable amount offer: {}", e))
+                    Status::internal(format!("Failed to create variable amount offer: {e}"))
                 })?
         };
 

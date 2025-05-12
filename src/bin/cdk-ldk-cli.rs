@@ -235,7 +235,7 @@ async fn main() -> Result<()> {
             let expiry_datetime = chrono::DateTime::from_timestamp(invoice.expiry_time as i64, 0)
                 .map(|dt| dt.to_rfc2822())
                 .unwrap_or_else(|| format!("Timestamp: {}", invoice.expiry_time));
-            println!("Expires: {}", expiry_datetime);
+            println!("Expires: {expiry_datetime}");
         }
         Commands::CreateBolt12Offer {
             amount_msats,
@@ -253,7 +253,7 @@ async fn main() -> Result<()> {
             let expiry_datetime = chrono::DateTime::from_timestamp(offer.expiry_time as i64, 0)
                 .map(|dt| dt.to_rfc2822())
                 .unwrap_or_else(|| format!("Timestamp: {}", offer.expiry_time));
-            println!("Expires: {}", expiry_datetime);
+            println!("Expires: {expiry_datetime}");
         }
     }
 
