@@ -139,7 +139,7 @@ pub fn format_channels_info(response: &crate::proto::ListChannelsResponse) -> St
                     channel.short_channel_id
                 ));
             }
-            output.push_str("\n");
+            output.push('\n');
         }
     }
 
