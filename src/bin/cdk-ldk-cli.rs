@@ -53,6 +53,38 @@ enum Commands {
         #[arg(short, long)]
         address: String,
     },
+    /// Pay a bolt11 invoice
+    PayBolt11 {
+        #[arg(short, long)]
+        invoice: String,
+        #[arg(short, long)]
+        amount_msats: Option<u64>,
+    },
+    /// Pay a bolt12 offer
+    PayBolt12 {
+        #[arg(short, long)]
+        offer: String,
+        #[arg(short, long)]
+        amount_msats: u64,
+    },
+    /// Create a BOLT11 invoice
+    CreateBolt11Invoice {
+        #[arg(short, long)]
+        amount_msats: u64,
+        #[arg(short, long)]
+        description: String,
+        #[arg(short, long)]
+        expiry_seconds: Option<u32>,
+    },
+    /// Create a BOLT12 offer
+    CreateBolt12Offer {
+        #[arg(short, long)]
+        amount_msats: Option<u64>,
+        #[arg(short, long)]
+        description: String,
+        #[arg(short, long)]
+        expiry_seconds: Option<u32>,
+    },
 }
 
 #[tokio::main]
@@ -148,6 +180,74 @@ async fn main() -> Result<()> {
         } => {
             let txid = client.send_onchain(amount_sat, address).await?;
             println!("Transaction sent with txid: {txid}");
+        }
+        Commands::PayBolt11 {
+            invoice,
+            amount_msats,
+        } => {
+            let payment = client.pay_bolt11_invoice(invoice, amount_msats).await?;
+            if payment.success {
+                println!("Payment succeeded!");
+                println!("Payment hash: {}", payment.payment_hash);
+                println!("Payment preimage: {}", payment.payment_preimage);
+                println!("Fee paid (msats): {}", payment.fee_msats);
+            } else {
+                println!(
+                    "Payment failed: {}",
+                    payment
+                        .failure_reason
+                        .unwrap_or_else(|| "Unknown reason".to_string())
+                );
+            }
+        }
+        Commands::PayBolt12 {
+            offer,
+            amount_msats,
+        } => {
+            let payment = client.pay_bolt12_offer(offer, amount_msats).await?;
+            if payment.success {
+                println!("Payment succeeded!");
+                println!("Payment hash: {}", payment.payment_hash);
+                println!("Payment preimage: {}", payment.payment_preimage);
+                println!("Fee paid (msats): {}", payment.fee_msats);
+            } else {
+                println!(
+                    "Payment failed: {}",
+                    payment
+                        .failure_reason
+                        .unwrap_or_else(|| "Unknown reason".to_string())
+                );
+            }
+        }
+        Commands::CreateBolt11Invoice {
+            amount_msats,
+            description,
+            expiry_seconds,
+        } => {
+            let invoice = client
+                .create_bolt11_invoice(amount_msats, description, expiry_seconds)
+                .await?;
+            println!("Invoice created successfully!");
+            println!("Payment hash: {}", invoice.payment_hash);
+            println!("Invoice: {}", invoice.invoice);
+
+            // Format expiry time as human-readable date
+            println!("Expires: {}", invoice.expiry_time);
+        }
+        Commands::CreateBolt12Offer {
+            amount_msats,
+            description,
+            expiry_seconds,
+        } => {
+            let offer = client
+                .create_bolt12_offer(amount_msats, description, expiry_seconds)
+                .await?;
+            println!("Offer created successfully!");
+            println!("Offer ID: {}", offer.offer_id);
+            println!("Offer: {}", offer.offer);
+
+            // Format expiry time as human-readable date
+            println!("Expires: {}", offer.expiry_time);
         }
     }
 

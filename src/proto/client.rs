@@ -81,4 +81,60 @@ impl CdkLdkClient {
         let response = self.client.send_onchain(request).await?;
         Ok(response.into_inner().txid)
     }
+
+    pub async fn pay_bolt11_invoice(
+        &mut self,
+        invoice: String,
+        amount_msats: Option<u64>,
+    ) -> anyhow::Result<PaymentResponse> {
+        let request = PayBolt11InvoiceRequest {
+            invoice,
+            amount_msats,
+        };
+        let response = self.client.pay_bolt11_invoice(request).await?;
+        Ok(response.into_inner())
+    }
+
+    pub async fn pay_bolt12_offer(
+        &mut self,
+        offer: String,
+        amount_msats: u64,
+    ) -> anyhow::Result<PaymentResponse> {
+        let request = PayBolt12OfferRequest {
+            offer,
+            amount_msats,
+        };
+        let response = self.client.pay_bolt12_offer(request).await?;
+        Ok(response.into_inner())
+    }
+
+    pub async fn create_bolt11_invoice(
+        &mut self,
+        amount_msats: u64,
+        description: String,
+        expiry_seconds: Option<u32>,
+    ) -> anyhow::Result<CreateInvoiceResponse> {
+        let request = CreateBolt11InvoiceRequest {
+            amount_msats,
+            description,
+            expiry_seconds,
+        };
+        let response = self.client.create_bolt11_invoice(request).await?;
+        Ok(response.into_inner())
+    }
+
+    pub async fn create_bolt12_offer(
+        &mut self,
+        amount_msats: Option<u64>,
+        description: String,
+        expiry_seconds: Option<u32>,
+    ) -> anyhow::Result<CreateOfferResponse> {
+        let request = CreateBolt12OfferRequest {
+            amount_msats,
+            description,
+            expiry_seconds,
+        };
+        let response = self.client.create_bolt12_offer(request).await?;
+        Ok(response.into_inner())
+    }
 }
