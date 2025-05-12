@@ -29,6 +29,7 @@ use tracing::instrument;
 
 pub mod config;
 pub mod proto;
+pub mod utils;
 
 pub struct CdkLdkNode {
     inner: Arc<Node>,
