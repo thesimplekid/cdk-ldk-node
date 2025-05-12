@@ -9,6 +9,10 @@ service CdkLdkManagement {
   rpc CloseChannel(CloseChannelRequest) returns (CloseChannelResponse) {}
   rpc ListBalance(ListBalanceRequest) returns (ListBalanceResponse) {}
   rpc SendOnchain(SendOnchainRequest) returns (SendOnchainResponse) {}
+  rpc PayBolt11Invoice(PayBolt11InvoiceRequest) returns (PaymentResponse) {}
+  rpc PayBolt12Offer(PayBolt12OfferRequest) returns (PaymentResponse) {}
+  rpc CreateBolt11Invoice(CreateBolt11InvoiceRequest) returns (CreateInvoiceResponse) {}
+  rpc CreateBolt12Offer(CreateBolt12OfferRequest) returns (CreateOfferResponse) {}
 }
 
 message GetInfoRequest {}
@@ -65,5 +69,47 @@ message SendOnchainRequest {
 
 message SendOnchainResponse {
   string txid = 1;
+}
+
+message PayBolt11InvoiceRequest {
+  string invoice = 1;
+  optional uint64 amount_msats = 2;  // Optional: amount to pay if not specified in invoice
+}
+
+message PayBolt12OfferRequest {
+  string offer = 1;
+  uint64 amount_msats = 2;  // Required: amount to pay
+}
+
+message PaymentResponse {
+  string payment_hash = 1;
+  string payment_preimage = 2;
+  uint64 fee_msats = 3;
+  bool success = 4;
+  optional string failure_reason = 5;
+}
+
+message CreateBolt11InvoiceRequest {
+  uint64 amount_msats = 1;
+  string description = 2;
+  optional uint32 expiry_seconds = 3; // defaults to 1 hour if not specified
+}
+
+message CreateInvoiceResponse {
+  string payment_hash = 1;
+  string invoice = 2;
+  uint64 expiry_time = 3; // unix timestamp when invoice expires
+}
+
+message CreateBolt12OfferRequest {
+  optional uint64 amount_msats = 1; // If not provided, creates a variable-amount offer
+  string description = 2;
+  optional uint32 expiry_seconds = 3; // defaults to 1 hour if not specified
+}
+
+message CreateOfferResponse {
+  string offer_id = 1;
+  string offer = 2;
+  uint64 expiry_time = 3; // unix timestamp when offer expires
 }
 
