@@ -27,7 +27,65 @@ impl CdkLdkManagement for CdkLdkServer {
         &self,
         _request: Request<GetInfoRequest>,
     ) -> Result<Response<GetInfoResponse>, Status> {
-        Ok(Response::new(GetInfoResponse {}))
+        let node = self.node.inner.as_ref();
+
+        let node_id = node.node_id();
+        let alias = node
+            .node_alias()
+            .map(|a| a.to_string())
+            .unwrap_or("".to_string());
+
+        let config = self.node.inner.config();
+
+        let announcement_addresses = config
+            .announcement_addresses
+            .as_ref()
+            .unwrap_or(&vec![])
+            .iter()
+            .map(|a| a.to_string())
+            .collect();
+
+        let listening_addresses = config
+            .announcement_addresses
+            .unwrap_or_default()
+            .iter()
+            .map(|a| a.to_string())
+            .collect();
+
+        let (num_peers, num_connected_peers) =
+            node.list_peers()
+                .iter()
+                .fold((0, 0), |(mut peers, mut connected), p| {
+                    if p.is_connected {
+                        connected += 1;
+                    }
+                    peers += 1;
+
+                    (peers, connected)
+                });
+
+        let (num_active_channels, num_inactive_channels) =
+            node.list_channels()
+                .iter()
+                .fold((0, 0), |(mut active, mut inactive), c| {
+                    if c.is_usable {
+                        active += 1;
+                    } else {
+                        inactive += 1;
+                    }
+                    (active, inactive)
+                });
+
+        Ok(Response::new(GetInfoResponse {
+            node_id: node_id.to_string(),
+            alias,
+            announcement_addresses,
+            listening_addresses,
+            num_peers,
+            num_connected_peers,
+            num_active_channels,
+            num_inactive_channels,
+        }))
     }
 
     async fn get_new_address(
@@ -55,11 +113,19 @@ impl CdkLdkManagement for CdkLdkServer {
         let socket_addr = SocketAddress::from_str(&format!("{}:{}", req.address, req.port))
             .map_err(|e| Status::internal(e.to_string()))?;
 
+        let pubkey =
+            PublicKey::from_str(&req.node_id).map_err(|e| Status::internal(e.to_string()))?;
+
+        self.node
+            .inner
+            .connect(pubkey, socket_addr.clone(), true)
+            .map_err(|e| Status::internal(e.to_string()))?;
+
         let channel = self
             .node
             .inner
             .open_announced_channel(
-                PublicKey::from_str(&req.node_id).map_err(|e| Status::internal(e.to_string()))?,
+                pubkey,
                 socket_addr,
                 req.amount_msats,
                 req.push_to_counter_party_msats,
@@ -81,12 +147,12 @@ impl CdkLdkManagement for CdkLdkServer {
         let node_pubkey = req
             .node_pubkey
             .parse()
-            .map_err(|e| Status::invalid_argument(format!("Invalid node pubkey: {}", e)))?;
+            .map_err(|e| Status::invalid_argument(format!("Invalid node pubkey: {e}")))?;
 
         let channel_id: u128 = req
             .channel_id
             .parse()
-            .map_err(|e| Status::invalid_argument(format!("Invalid channel id: {}", e)))?;
+            .map_err(|e| Status::invalid_argument(format!("Invalid channel id: {e}")))?;
 
         let channel_id = UserChannelId(channel_id);
 
