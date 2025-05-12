@@ -46,6 +46,8 @@ enum Commands {
     },
     /// List balances
     ListBalance,
+    /// List channels
+    ListChannels,
     /// Send bitcoin on-chain
     SendOnchain {
         #[arg(short, long)]
@@ -173,6 +175,36 @@ async fn main() -> Result<()> {
                 "Total lightning balance (sats): {}",
                 balance.total_lightning_balance_sats
             );
+        }
+        Commands::ListChannels => {
+            let response = client.list_channels().await?;
+            println!("Lightning Channels:");
+            println!("-----------------");
+
+            if response.channels.is_empty() {
+                println!("No channels found.");
+            } else {
+                for (i, channel) in response.channels.iter().enumerate() {
+                    println!("Channel #{}:", i + 1);
+                    println!("  ID: {}", channel.channel_id);
+                    println!("  Counterparty: {}", channel.counterparty_node_id);
+                    println!("  Balance: {} msats", channel.balance_msat);
+                    println!(
+                        "  Outbound Capacity: {} msats",
+                        channel.outbound_capacity_msat
+                    );
+                    println!(
+                        "  Inbound Capacity: {} msats",
+                        channel.inbound_capacity_msat
+                    );
+                    println!("  Usable: {}", channel.is_usable);
+                    println!("  Public: {}", channel.is_public);
+                    if !channel.short_channel_id.is_empty() {
+                        println!("  Short Channel ID: {}", channel.short_channel_id);
+                    }
+                    println!();
+                }
+            }
         }
         Commands::SendOnchain {
             amount_sat,

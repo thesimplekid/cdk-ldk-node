@@ -69,6 +69,12 @@ impl CdkLdkClient {
         Ok(response.into_inner())
     }
 
+    pub async fn list_channels(&mut self) -> anyhow::Result<ListChannelsResponse> {
+        let request = ListChannelsRequest {};
+        let response = self.client.list_channels(request).await?;
+        Ok(response.into_inner())
+    }
+
     pub async fn send_onchain(
         &mut self,
         amount_sat: u64,
