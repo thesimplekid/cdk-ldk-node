@@ -178,6 +178,35 @@ impl CdkLdkManagement for CdkLdkServer {
         }))
     }
 
+    async fn list_channels(
+        &self,
+        _request: Request<ListChannelsRequest>,
+    ) -> Result<Response<ListChannelsResponse>, Status> {
+        let channels = self.node.inner.list_channels();
+
+        let channel_infos = channels
+            .iter()
+            .map(|channel| ChannelInfo {
+                channel_id: channel.channel_id.to_string(),
+                counterparty_node_id: channel.counterparty_node_id.to_string(),
+                // For balance, we'll calculate based on outbound capacity
+                balance_msat: channel.outbound_capacity_msat,
+                outbound_capacity_msat: channel.outbound_capacity_msat,
+                inbound_capacity_msat: channel.inbound_capacity_msat,
+                is_usable: channel.is_usable,
+                is_public: channel.is_channel_ready, // Using is_channel_ready as is_public
+                short_channel_id: channel
+                    .short_channel_id
+                    .map(|scid| scid.to_string())
+                    .unwrap_or_default(),
+            })
+            .collect();
+
+        Ok(Response::new(ListChannelsResponse {
+            channels: channel_infos,
+        }))
+    }
+
     async fn send_onchain(
         &self,
         request: Request<SendOnchainRequest>,

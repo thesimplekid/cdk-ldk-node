@@ -8,6 +8,7 @@ service CdkLdkManagement {
   rpc OpenChannel(OpenChannelRequest) returns (OpenChannelResponse) {}
   rpc CloseChannel(CloseChannelRequest) returns (CloseChannelResponse) {}
   rpc ListBalance(ListBalanceRequest) returns (ListBalanceResponse) {}
+  rpc ListChannels(ListChannelsRequest) returns (ListChannelsResponse) {}
   rpc SendOnchain(SendOnchainRequest) returns (SendOnchainResponse) {}
   rpc PayBolt11Invoice(PayBolt11InvoiceRequest) returns (PaymentResponse) {}
   rpc PayBolt12Offer(PayBolt12OfferRequest) returns (PaymentResponse) {}
@@ -113,3 +114,19 @@ message CreateOfferResponse {
   uint64 expiry_time = 3; // unix timestamp when offer expires
 }
 
+message ListChannelsRequest {}
+
+message ChannelInfo {
+  string channel_id = 1;
+  string counterparty_node_id = 2;
+  uint64 balance_msat = 3;
+  uint64 outbound_capacity_msat = 4;
+  uint64 inbound_capacity_msat = 5;
+  bool is_usable = 6;
+  bool is_public = 7;
+  string short_channel_id = 8;
+}
+
+message ListChannelsResponse {
+  repeated ChannelInfo channels = 1;
+}
