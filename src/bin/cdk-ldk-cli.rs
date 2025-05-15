@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use cdk_ldk_node::proto::client::CdkLdkClient;
+use cdk_ldk_node::utils;
 use clap::{Parser, Subcommand};
-use tonic::transport::{Certificate, Channel, ClientTlsConfig, Identity};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -94,49 +94,13 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     let work_dir: PathBuf = cli.work_dir.parse()?;
 
-    let channel = if cli.work_dir.parse::<PathBuf>()?.join("tls").is_dir() {
-        // TLS directory exists, configure TLS
-        let server_root_ca_cert = std::fs::read_to_string(work_dir.join("tls/ca.pem"))?;
-        let server_root_ca_cert = Certificate::from_pem(server_root_ca_cert);
-        let client_cert = std::fs::read_to_string(work_dir.join("tls/client.pem"))?;
-        let client_key = std::fs::read_to_string(work_dir.join("tls/client.key"))?;
-        let client_identity = Identity::from_pem(client_cert, client_key);
-        let tls = ClientTlsConfig::new()
-            .ca_certificate(server_root_ca_cert)
-            .identity(client_identity);
-
-        Channel::from_shared(cli.address.to_string())?
-            .tls_config(tls)?
-            .connect()
-            .await?
-    } else {
-        // No TLS directory, skip TLS configuration
-        Channel::from_shared(cli.address.to_string())?
-            .connect()
-            .await?
-    };
-
-    let mut client = CdkLdkClient::new(channel);
+    // Use the new method from the client to create a client with the work_dir
+    let mut client = CdkLdkClient::create_with_work_dir(cli.address.to_string(), work_dir).await?;
 
     match cli.command {
         Commands::GetInfo => {
             let info = client.get_info().await?;
-            println!("Node Information:");
-            println!("----------------");
-            println!("Node ID: {}", info.node_id);
-            println!("Alias: {}", info.alias);
-            println!(
-                "Listening Addresses: {}",
-                info.listening_addresses.join(", ")
-            );
-            println!(
-                "Announcement Addresses: {}",
-                info.announcement_addresses.join(", ")
-            );
-            println!("Connected peer count: {}", info.num_connected_peers);
-            println!("Peer count: {}", info.num_peers);
-            println!("Connected channel count: {}", info.num_active_channels);
-            println!("Inactive channel count: {}", info.num_inactive_channels);
+            print!("{}", utils::format_node_info(&info));
         }
         Commands::GetNewAddress => {
             let address = client.get_new_address().await?;
@@ -163,48 +127,11 @@ async fn main() -> Result<()> {
         }
         Commands::ListBalance => {
             let balance = client.list_balance().await?;
-            println!(
-                "Total onchain balance (sats): {}",
-                balance.total_onchain_balance_sats
-            );
-            println!(
-                "Spendable onchain balance (sats): {}",
-                balance.spendable_onchain_balance_sats
-            );
-            println!(
-                "Total lightning balance (sats): {}",
-                balance.total_lightning_balance_sats
-            );
+            print!("{}", utils::format_balance_info(&balance));
         }
         Commands::ListChannels => {
             let response = client.list_channels().await?;
-            println!("Lightning Channels:");
-            println!("-----------------");
-
-            if response.channels.is_empty() {
-                println!("No channels found.");
-            } else {
-                for (i, channel) in response.channels.iter().enumerate() {
-                    println!("Channel #{}:", i + 1);
-                    println!("  ID: {}", channel.channel_id);
-                    println!("  Counterparty: {}", channel.counterparty_node_id);
-                    println!("  Balance: {} msats", channel.balance_msat);
-                    println!(
-                        "  Outbound Capacity: {} msats",
-                        channel.outbound_capacity_msat
-                    );
-                    println!(
-                        "  Inbound Capacity: {} msats",
-                        channel.inbound_capacity_msat
-                    );
-                    println!("  Usable: {}", channel.is_usable);
-                    println!("  Public: {}", channel.is_public);
-                    if !channel.short_channel_id.is_empty() {
-                        println!("  Short Channel ID: {}", channel.short_channel_id);
-                    }
-                    println!();
-                }
-            }
+            print!("{}", utils::format_channels_info(&response));
         }
         Commands::SendOnchain {
             amount_sat,
@@ -218,38 +145,14 @@ async fn main() -> Result<()> {
             amount_msats,
         } => {
             let payment = client.pay_bolt11_invoice(invoice, amount_msats).await?;
-            if payment.success {
-                println!("Payment succeeded!");
-                println!("Payment hash: {}", payment.payment_hash);
-                println!("Payment preimage: {}", payment.payment_preimage);
-                println!("Fee paid (msats): {}", payment.fee_msats);
-            } else {
-                println!(
-                    "Payment failed: {}",
-                    payment
-                        .failure_reason
-                        .unwrap_or_else(|| "Unknown reason".to_string())
-                );
-            }
+            print!("{}", utils::format_payment_response(&payment));
         }
         Commands::PayBolt12 {
             offer,
             amount_msats,
         } => {
             let payment = client.pay_bolt12_offer(offer, amount_msats).await?;
-            if payment.success {
-                println!("Payment succeeded!");
-                println!("Payment hash: {}", payment.payment_hash);
-                println!("Payment preimage: {}", payment.payment_preimage);
-                println!("Fee paid (msats): {}", payment.fee_msats);
-            } else {
-                println!(
-                    "Payment failed: {}",
-                    payment
-                        .failure_reason
-                        .unwrap_or_else(|| "Unknown reason".to_string())
-                );
-            }
+            print!("{}", utils::format_payment_response(&payment));
         }
         Commands::CreateBolt11Invoice {
             amount_msats,

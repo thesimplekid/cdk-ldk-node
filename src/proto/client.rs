@@ -1,3 +1,6 @@
+use std::path::PathBuf;
+
+use anyhow::Result;
 use tonic::transport::Channel;
 
 use super::cdk_ldk_management_client::CdkLdkManagementClient;
@@ -14,18 +17,24 @@ impl CdkLdkClient {
         }
     }
 
-    pub async fn connect(addr: String) -> anyhow::Result<Self> {
+    pub async fn connect(addr: String) -> Result<Self> {
         let client = CdkLdkManagementClient::connect(addr).await?;
         Ok(Self { client })
     }
 
-    pub async fn get_info(&mut self) -> anyhow::Result<GetInfoResponse> {
+    /// Create a client with TLS configuration based on the work_dir
+    pub async fn create_with_work_dir(address: String, work_dir: PathBuf) -> Result<Self> {
+        let channel = crate::utils::create_channel(address, work_dir).await?;
+        Ok(Self::new(channel))
+    }
+
+    pub async fn get_info(&mut self) -> Result<GetInfoResponse> {
         let request = GetInfoRequest {};
         let response = self.client.get_info(request).await?;
         Ok(response.into_inner())
     }
 
-    pub async fn get_new_address(&mut self) -> anyhow::Result<String> {
+    pub async fn get_new_address(&mut self) -> Result<String> {
         let request = GetNewAddressRequest {};
         let response = self.client.get_new_address(request).await?;
         Ok(response.into_inner().address)
@@ -38,7 +47,7 @@ impl CdkLdkClient {
         port: u32,
         amount_msats: u64,
         push_to_counter_party_msats: Option<u64>,
-    ) -> anyhow::Result<String> {
+    ) -> Result<String> {
         let request = OpenChannelRequest {
             node_id,
             address,
@@ -50,11 +59,7 @@ impl CdkLdkClient {
         Ok(response.into_inner().channel_id)
     }
 
-    pub async fn close_channel(
-        &mut self,
-        channel_id: String,
-        node_pubkey: String,
-    ) -> anyhow::Result<()> {
+    pub async fn close_channel(&mut self, channel_id: String, node_pubkey: String) -> Result<()> {
         let request = CloseChannelRequest {
             channel_id,
             node_pubkey,
@@ -63,23 +68,19 @@ impl CdkLdkClient {
         Ok(())
     }
 
-    pub async fn list_balance(&mut self) -> anyhow::Result<ListBalanceResponse> {
+    pub async fn list_balance(&mut self) -> Result<ListBalanceResponse> {
         let request = ListBalanceRequest {};
         let response = self.client.list_balance(request).await?;
         Ok(response.into_inner())
     }
 
-    pub async fn list_channels(&mut self) -> anyhow::Result<ListChannelsResponse> {
+    pub async fn list_channels(&mut self) -> Result<ListChannelsResponse> {
         let request = ListChannelsRequest {};
         let response = self.client.list_channels(request).await?;
         Ok(response.into_inner())
     }
 
-    pub async fn send_onchain(
-        &mut self,
-        amount_sat: u64,
-        address: String,
-    ) -> anyhow::Result<String> {
+    pub async fn send_onchain(&mut self, amount_sat: u64, address: String) -> Result<String> {
         let request = SendOnchainRequest {
             amount_sat,
             address,
@@ -92,7 +93,7 @@ impl CdkLdkClient {
         &mut self,
         invoice: String,
         amount_msats: Option<u64>,
-    ) -> anyhow::Result<PaymentResponse> {
+    ) -> Result<PaymentResponse> {
         let request = PayBolt11InvoiceRequest {
             invoice,
             amount_msats,
@@ -105,7 +106,7 @@ impl CdkLdkClient {
         &mut self,
         offer: String,
         amount_msats: u64,
-    ) -> anyhow::Result<PaymentResponse> {
+    ) -> Result<PaymentResponse> {
         let request = PayBolt12OfferRequest {
             offer,
             amount_msats,
@@ -119,7 +120,7 @@ impl CdkLdkClient {
         amount_msats: u64,
         description: String,
         expiry_seconds: Option<u32>,
-    ) -> anyhow::Result<CreateInvoiceResponse> {
+    ) -> Result<CreateInvoiceResponse> {
         let request = CreateBolt11InvoiceRequest {
             amount_msats,
             description,
@@ -134,7 +135,7 @@ impl CdkLdkClient {
         amount_msats: Option<u64>,
         description: String,
         expiry_seconds: Option<u32>,
-    ) -> anyhow::Result<CreateOfferResponse> {
+    ) -> Result<CreateOfferResponse> {
         let request = CreateBolt12OfferRequest {
             amount_msats,
             description,
