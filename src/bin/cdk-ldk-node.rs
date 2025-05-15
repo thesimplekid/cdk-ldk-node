@@ -2,10 +2,7 @@ use std::sync::Arc;
 
 use cdk_common::common::FeeReserve;
 use cdk_ldk_node::config::Config;
-use cdk_ldk_node::proto::cdk_ldk_management_server::CdkLdkManagementServer;
-use cdk_ldk_node::proto::server::CdkLdkServer;
 use tokio::signal;
-use tonic::transport::Server;
 use tracing_subscriber::EnvFilter;
 
 fn main() -> anyhow::Result<()> {
@@ -72,19 +69,15 @@ fn main() -> anyhow::Result<()> {
 
         // Start gRPC management server
         let grpc_addr = config.grpc_socket_addr()?;
-        let management_service = CdkLdkServer::new(cdk_ldk);
-
-        let grpc_server = Server::builder()
-            .add_service(CdkLdkManagementServer::new(management_service))
-            .serve(grpc_addr);
-
-        tokio::spawn(grpc_server);
+        cdk_ldk.start_management_service(grpc_addr)?;
 
         // Wait for shutdown signal
         signal::ctrl_c().await?;
 
         // Stop both servers
+        tracing::info!("Received shutdown signal, stopping servers");
         payment_server.stop().await?;
+        cdk_ldk.stop_management_service()?;
 
         Ok(())
     })
