@@ -77,7 +77,7 @@ fn main() -> anyhow::Result<()> {
         // Stop both servers
         tracing::info!("Received shutdown signal, stopping servers");
         payment_server.stop().await?;
-        cdk_ldk.stop_management_service()?;
+        cdk_ldk.stop()?;
 
         Ok(())
     })
