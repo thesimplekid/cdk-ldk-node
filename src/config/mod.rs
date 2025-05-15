@@ -195,7 +195,7 @@ impl Config {
 
         // Add environment variables as a source
         config_builder = config_builder.add_source(
-            config::Environment::with_prefix("CDK")
+            config::Environment::with_prefix("CDK_LDK_NODE")
                 .separator("_")
                 .try_parsing(true),
         );
