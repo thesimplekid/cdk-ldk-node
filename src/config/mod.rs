@@ -1,11 +1,9 @@
-use std::env;
-use std::fs::File;
-use std::io::Read;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use anyhow::{anyhow, Result};
+use config::{Config as ConfigBuilder, File as ConfigFile};
 use ldk_node::bitcoin::Network;
 use ldk_node::lightning::ln::msgs::SocketAddress;
 use serde::Deserialize;
@@ -172,62 +170,41 @@ impl Config {
     /// Load configuration from config.toml and environment variables
     /// Environment variables take precedence over config file values
     pub fn load() -> Result<Self> {
-        // Start with default config
-        let mut config = Self::default();
+        let mut config_builder = ConfigBuilder::builder();
 
         // Try to load from config file
-        match Self::load_from_file() {
-            Ok(file_config) => {
-                config = file_config;
-            }
-            Err(e) => {
-                tracing::info!("Could not load config file: {}", e);
+        let home_config_path = get_default_config_dir().join(CONFIG_FILENAME);
+        let current_dir_config_path = Path::new(CONFIG_FILENAME);
 
-                // If file not found, attempt to create the default config file
-                // This is a convenience, but not required to continue
-                if let Err(create_err) = Self::create_default_config_file() {
-                    tracing::warn!("Failed to create default config file: {}", create_err);
-                }
+        // Add the config file as a source if it exists
+        if home_config_path.exists() {
+            tracing::info!("Loading config from {}", home_config_path.display());
+            config_builder = config_builder.add_source(ConfigFile::from(home_config_path));
+        } else if current_dir_config_path.exists() {
+            tracing::info!("Loading config from {}", current_dir_config_path.display());
+            config_builder = config_builder.add_source(ConfigFile::from(current_dir_config_path));
+        } else {
+            tracing::info!("No config file found, using default configuration");
 
-                tracing::info!("Using default configuration");
+            // Attempt to create the default config file
+            // This is a convenience, but not required to continue
+            if let Err(create_err) = Self::create_default_config_file() {
+                tracing::warn!("Failed to create default config file: {}", create_err);
             }
         }
 
-        // Override with environment variables
-        config.override_with_env();
+        // Add environment variables as a source
+        config_builder = config_builder.add_source(
+            config::Environment::with_prefix("CDK")
+                .separator("_")
+                .try_parsing(true),
+        );
 
-        Ok(config)
-    }
+        // Build the config from all sources
+        let config = config_builder.build()?;
 
-    /// Load configuration from config.toml file
-    /// First checks in ~/.cdk-ldk-node/config.toml, then in the current directory
-    fn load_from_file() -> Result<Self> {
-        // Try home directory first
-        let mut home_config_path = get_default_config_dir();
-        home_config_path.push(CONFIG_FILENAME);
-
-        // Try current directory as fallback
-        let current_dir_config_path = Path::new(CONFIG_FILENAME);
-
-        // Check which path exists and use it
-        let config_path = if home_config_path.exists() {
-            home_config_path
-        } else if current_dir_config_path.exists() {
-            current_dir_config_path.to_path_buf()
-        } else {
-            return Err(anyhow!(
-                "Config file not found at {} or in current directory",
-                home_config_path.display()
-            ));
-        };
-
-        tracing::info!("Loading config from {}", config_path.display());
-
-        let mut file = File::open(&config_path)?;
-        let mut content = String::new();
-        file.read_to_string(&mut content)?;
-
-        let config: Config = toml::from_str(&content)?;
+        // Try to deserialize the config into our Config struct
+        let config = config.try_deserialize::<Config>()?;
 
         Ok(config)
     }
@@ -306,84 +283,6 @@ source_type = "p2p"
         std::fs::write(config_path, default_config)?;
 
         Ok(())
-    }
-
-    /// Override configuration with environment variables
-    fn override_with_env(&mut self) {
-        if let Ok(value) = env::var(ENV_LISTEN_HOST) {
-            self.payment_processor.listen_host = Some(value);
-        }
-
-        if let Ok(value) = env::var(ENV_LISTEN_PORT) {
-            if let Ok(port) = value.parse::<u16>() {
-                self.payment_processor.listen_port = Some(port);
-            }
-        }
-
-        if let Ok(value) = env::var(ENV_PAYMENT_PROCESSOR_TLS_DIR) {
-            self.payment_processor.tls_dir = Some(value);
-        }
-
-        // Chain source config
-        if let Ok(value) = env::var(ENV_CHAIN_SOURCE) {
-            self.chain_source.source_type = Some(value);
-        }
-
-        if let Ok(value) = env::var(ENV_ESPLORA_URL) {
-            self.chain_source.esplora_url = Some(value);
-        }
-
-        if let Ok(value) = env::var(ENV_BITCOIN_RPC_HOST) {
-            self.chain_source.bitcoinrpc.host = Some(value);
-        }
-
-        if let Ok(value) = env::var(ENV_BITCOIN_RPC_PORT) {
-            if let Ok(port) = value.parse::<u16>() {
-                self.chain_source.bitcoinrpc.port = Some(port);
-            }
-        }
-
-        if let Ok(value) = env::var(ENV_BITCOIN_RPC_USER) {
-            self.chain_source.bitcoinrpc.user = Some(value);
-        }
-
-        if let Ok(value) = env::var(ENV_BITCOIN_RPC_PASS) {
-            self.chain_source.bitcoinrpc.password = Some(value);
-        }
-
-        // Network config
-        if let Ok(value) = env::var(ENV_BITCOIN_NETWORK) {
-            self.network.bitcoin_network = Some(value);
-        }
-
-        // GRPC config
-        if let Ok(value) = env::var(ENV_GRPC_HOST) {
-            self.grpc.host = Some(value);
-        }
-
-        if let Ok(value) = env::var(ENV_GRPC_PORT) {
-            self.grpc.port = Some(value);
-        }
-
-        // Storage config
-        if let Ok(value) = env::var(ENV_STORAGE_DIR_PATH) {
-            self.storage.dir_path = Some(value);
-        }
-
-        // LDK Node config
-        if let Ok(value) = env::var(ENV_LDK_NODE_HOST) {
-            self.ldk_node.host = Some(value);
-        }
-
-        if let Ok(value) = env::var(ENV_LDK_NODE_PORT) {
-            if let Ok(port) = value.parse::<u16>() {
-                self.ldk_node.port = Some(port);
-            }
-        }
-
-        if let Ok(value) = env::var(ENV_RGS_URL) {
-            self.gossip_source.rgs_url = Some(value);
-        }
     }
 
     /// Get payment processor listen host
