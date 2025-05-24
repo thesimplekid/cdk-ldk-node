@@ -60,9 +60,9 @@ enum Commands {
     ListChannels,
     /// Send bitcoin on-chain
     SendOnchain {
-        #[arg(short, long)]
+        #[arg(long)]
         amount_sat: u64,
-        #[arg(short, long)]
+        #[arg(long)]
         address: String,
     },
     /// Pay a bolt11 invoice
