@@ -38,6 +38,7 @@ tonic = { version = "0.12", features = [
 ] }
 prost = "0.13.0"
 config = { version = "0.15.0", features = ["toml"] }
+bip39 = { version = "2.1.0", features = ["rand"] }
 
 [build-dependencies]
 tonic-build = "0.9"

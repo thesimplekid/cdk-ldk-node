@@ -6,12 +6,22 @@ use cdk_ldk_node::utils;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(author, version, about, long_about = None)]
+#[command(author, version, about = "CDK LDK CLI - Command-line interface for the CDK LDK Node", long_about = None)]
 struct Cli {
-    #[arg(short, long, default_value = "http://127.0.0.1:50051")]
+    #[arg(
+        short,
+        long,
+        default_value = "http://127.0.0.1:50051",
+        help = "Address of the CDK LDK Node gRPC server"
+    )]
     address: String,
 
-    #[arg(short, long, default_value = "~/.cdk-ldk-cli")]
+    #[arg(
+        short,
+        long,
+        default_value = "~/.cdk-ldk-cli",
+        help = "Specify a custom working directory containing the config.toml file"
+    )]
     work_dir: String,
 
     #[command(subcommand)]

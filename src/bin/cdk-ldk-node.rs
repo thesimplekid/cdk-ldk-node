@@ -1,11 +1,29 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use cdk_common::common::FeeReserve;
 use cdk_ldk_node::config::Config;
+use clap::Parser;
 use tokio::signal;
 use tracing_subscriber::EnvFilter;
 
+#[derive(Parser, Debug)]
+#[command(author, version, about = "CDK LDK Node - A Lightning Network node implementation", long_about = None)]
+struct Args {
+    /// Path to working directory where config.toml is located
+    #[arg(
+        short,
+        long,
+        value_name = "DIR",
+        help = "Specify a custom working directory containing the config.toml file"
+    )]
+    work_dir: Option<PathBuf>,
+}
+
 fn main() -> anyhow::Result<()> {
+    // Parse command line arguments
+    let args = Args::parse();
+
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
@@ -28,7 +46,11 @@ fn main() -> anyhow::Result<()> {
         tracing_subscriber::fmt().with_env_filter(env_filter).init();
 
         // Load configuration
-        let config = Config::load()?;
+        let config = if let Some(work_dir) = &args.work_dir {
+            Config::load_with_path(work_dir)?
+        } else {
+            Config::load()?
+        };
 
         // Extract configuration values
         let listen_addr = config.payment_processor_listen_host();

@@ -209,6 +209,40 @@ impl Config {
         Ok(config)
     }
 
+    /// Load configuration from a specific path and environment variables
+    /// Environment variables take precedence over config file values
+    pub fn load_with_path<P: AsRef<Path>>(work_dir: P) -> Result<Self> {
+        let mut config_builder = ConfigBuilder::builder();
+
+        // Try to load from config file in the specified directory
+        let config_path = work_dir.as_ref().join(CONFIG_FILENAME);
+
+        if config_path.exists() {
+            tracing::info!("Loading config from {}", config_path.display());
+            config_builder = config_builder.add_source(ConfigFile::from(config_path));
+        } else {
+            tracing::warn!(
+                "No config file found at {}, using default configuration",
+                config_path.display()
+            );
+        }
+
+        // Add environment variables as a source
+        config_builder = config_builder.add_source(
+            config::Environment::with_prefix("CDK_LDK_NODE")
+                .separator("_")
+                .try_parsing(true),
+        );
+
+        // Build the config from all sources
+        let config = config_builder.build()?;
+
+        // Try to deserialize the config into our Config struct
+        let config = config.try_deserialize::<Config>()?;
+
+        Ok(config)
+    }
+
     /// Create the default configuration file in the home directory
     /// This will create the .cdk-ldk-node directory if it doesn't exist
     fn create_default_config_file() -> Result<()> {
@@ -368,12 +402,14 @@ source_type = "p2p"
 
     /// Get storage directory path
     pub fn storage_dir_path(&self) -> String {
-        self.storage.dir_path.clone().unwrap_or_else(|| {
-            let mut home_dir = home::home_dir().unwrap_or_else(|| PathBuf::from("."));
-            home_dir.push(".cdk-ldk-node");
-            home_dir.push("ldk-node");
-            home_dir.to_string_lossy().to_string()
-        })
+        if let Some(dir_path) = &self.storage.dir_path {
+            return dir_path.clone();
+        }
+
+        let mut home_dir = home::home_dir().unwrap_or_else(|| PathBuf::from("."));
+        home_dir.push(".cdk-ldk-node");
+        home_dir.push("ldk-node");
+        home_dir.to_string_lossy().to_string()
     }
 
     /// Get LDK node listen socket address
