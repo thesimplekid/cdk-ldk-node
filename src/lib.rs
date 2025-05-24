@@ -764,9 +764,13 @@ impl MintPayment for CdkLdkNode {
             return Err(anyhow!("Invalid payment direction").into());
         }
 
-        let amount = payment_details
-            .amount_msat
-            .ok_or(anyhow!("Could not get payment amount"))?;
+        let amount = if payment_details.status == PaymentStatus::Succeeded {
+            payment_details
+                .amount_msat
+                .ok_or(anyhow!("Could not get payment amount"))?
+        } else {
+            0
+        };
 
         let response = WaitPaymentResponse {
             payment_identifier: payment_identifier.clone(),
