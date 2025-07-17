@@ -11,9 +11,10 @@ path = "src/lib.rs"
 name = "cdk-ldk-node"
 path = "src/bin/cdk-ldk-node.rs"
 
+
 [[bin]]
-name = "cdk-ldk-cli"
-path = "src/bin/cdk-ldk-cli.rs"
+name = "cdk-ldk-web"
+path = "src/bin/cdk-ldk-web.rs"
 
 [dependencies]
 ldk-node = { version = "0.5.0" }
@@ -31,15 +32,15 @@ tracing-subscriber = "0.3.19"
 tokio-util = "0.7.13"
 tokio-stream = { version = "0.1.17", features = ["sync"] }
 home = "0.5.5"
-tonic = { version = "0.12", features = [
-    "channel",
-    "tls",
-    "tls-webpki-roots",
-] }
-prost = "0.13.0"
+
 config = { version = "0.15.0", features = ["toml"] }
 bip39 = { version = "2.1.0", features = ["rand"] }
+maud = "0.27.0"
+features = "0.10.0"
+axum = { version = "0.8.4", features = ["macros"] }
+tower = "0.4"
+tower-http = { version = "0.6", features = ["fs", "cors"] }
+serde_urlencoded = "0.7"
 
-[build-dependencies]
-tonic-build = "0.9"
+
 

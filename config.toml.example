@@ -28,11 +28,6 @@ password = "testpass"
 # Bitcoin network (mainnet, testnet, signet, regtest)
 bitcoin_network = "regtest"
 
-[grpc]
-# GRPC API configuration
-host = "127.0.0.1"
-port = "50051"
-
 [storage]
 # Directory path for storage
 # If not specified, defaults to $HOME/.cdk-ldk-node

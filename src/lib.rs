@@ -18,17 +18,14 @@ use ldk_node::lightning_invoice::{Bolt11InvoiceDescription, Description};
 use ldk_node::lightning_types::payment::PaymentHash;
 use ldk_node::payment::{PaymentDirection, PaymentKind, PaymentStatus, SendingParameters};
 use ldk_node::{Builder, Event, Node};
-use proto::cdk_ldk_management_server::CdkLdkManagementServer;
-use proto::server::CdkLdkServer;
 use tokio::runtime::Runtime;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_util::sync::CancellationToken;
-use tonic::transport::Server;
 use tracing::instrument;
 
 pub mod config;
-pub mod proto;
 pub mod utils;
+pub mod web;
 pub use cdk_common::payment::{self, *};
 
 #[derive(Clone)]
@@ -40,7 +37,6 @@ pub struct CdkLdkNode {
     sender: tokio::sync::broadcast::Sender<WaitPaymentResponse>,
     receiver: Arc<tokio::sync::broadcast::Receiver<WaitPaymentResponse>>,
     events_cancel_token: CancellationToken,
-    management_service_cancel_token: Arc<CancellationToken>,
 }
 
 #[derive(Debug, Clone)]
@@ -123,7 +119,6 @@ impl CdkLdkNode {
             sender,
             receiver: Arc::new(receiver),
             events_cancel_token: CancellationToken::new(),
-            management_service_cancel_token: Arc::new(CancellationToken::new()),
         })
     }
 
@@ -143,38 +138,27 @@ impl CdkLdkNode {
         Ok(())
     }
 
-    pub fn start_management_service(&self, grpc_addr: SocketAddr) -> anyhow::Result<()> {
-        let management_service = CdkLdkServer::new(Arc::new(self.clone()));
 
-        let cancel_token = self.management_service_cancel_token.clone();
 
-        let grpc_server = Server::builder()
-            .add_service(CdkLdkManagementServer::new(management_service))
-            .serve_with_shutdown(grpc_addr, async move {
-                cancel_token.cancelled().await;
-                tracing::info!("Management service received shutdown signal");
-            });
-
-        tokio::spawn(grpc_server);
-        tracing::info!("Started management service on {}", grpc_addr);
+    pub fn start_web_server(&self, web_addr: SocketAddr) -> anyhow::Result<()> {
+        let web_server = crate::web::WebServer::new(Arc::new(self.clone()));
+        
+        tokio::spawn(async move {
+            if let Err(e) = web_server.serve(web_addr).await {
+                tracing::error!("Web server error: {}", e);
+            }
+        });
+        
         Ok(())
     }
 
-    pub fn stop_management_service(&self) -> anyhow::Result<()> {
-        tracing::info!("Stopping management service");
-        self.management_service_cancel_token.cancel();
-        tracing::info!("Management service shutdown signal sent");
-        Ok(())
-    }
+
 
     pub fn stop(&self) -> anyhow::Result<()> {
         tracing::info!("Stopping CdkLdkNode");
         // Cancel all tokio tasks
         tracing::info!("Cancelling event handler");
         self.events_cancel_token.cancel();
-
-        // Stop the management service
-        self.stop_management_service()?;
 
         // Cancel any wait_invoice streams
         if self.is_wait_invoice_active() {
@@ -850,7 +834,6 @@ impl Drop for CdkLdkNode {
     fn drop(&mut self) {
         tracing::info!("Drop called on CdkLdkNode");
         self.wait_invoice_cancel_token.cancel();
-        self.management_service_cancel_token.cancel();
         tracing::debug!("Cancelled wait_invoice token in drop");
         if let Err(e) = self.stop() {
             tracing::error!("Error stopping node during drop: {}", e);
