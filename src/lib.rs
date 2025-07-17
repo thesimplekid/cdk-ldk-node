@@ -330,6 +330,7 @@ impl MintPayment for CdkLdkNode {
             unit: CurrencyUnit::Sat,
             invoice_description: true,
             amountless: false,
+            bolt12: true
         };
         Ok(serde_json::to_value(settings)?)
     }
@@ -460,6 +461,7 @@ impl MintPayment for CdkLdkNode {
                     fee: fee.into(),
                     state: MeltQuoteState::Unpaid,
                     options: None,
+                    unit: unit.clone()
                 })
             }
             OutgoingPaymentOptions::Bolt12(bolt12_options) => {
@@ -496,6 +498,7 @@ impl MintPayment for CdkLdkNode {
                     fee: fee.into(),
                     state: MeltQuoteState::Unpaid,
                     options: None,
+                    unit: unit.clone()
                 })
             }
         }
