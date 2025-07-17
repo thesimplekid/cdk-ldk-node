@@ -89,14 +89,10 @@ fn main() -> anyhow::Result<()> {
 
         payment_server.start(tls_dir).await?;
 
-        // Start gRPC management server
-        let grpc_addr = config.grpc_socket_addr()?;
-        cdk_ldk.start_management_service(grpc_addr)?;
-
         // Wait for shutdown signal
         signal::ctrl_c().await?;
 
-        // Stop both servers
+        // Stop servers
         tracing::info!("Received shutdown signal, stopping servers");
         payment_server.stop().await?;
         cdk_ldk.stop()?;

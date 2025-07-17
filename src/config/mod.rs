@@ -1,4 +1,3 @@
-use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -15,8 +14,6 @@ pub const ENV_LN_BACKEND: &str = "CDK_PAYMENT_PROCESSOR_LN_BACKEND";
 pub const ENV_LISTEN_HOST: &str = "CDK_PAYMENT_PROCESSOR_LISTEN_HOST";
 pub const ENV_LISTEN_PORT: &str = "CDK_PAYMENT_PROCESSOR_LISTEN_PORT";
 pub const ENV_PAYMENT_PROCESSOR_TLS_DIR: &str = "CDK_PAYMENT_PROCESSOR_TLS_DIR";
-pub const ENV_GRPC_HOST: &str = "CDK_GRPC_HOST";
-pub const ENV_GRPC_PORT: &str = "CDK_GRPC_PORT";
 
 // Chain source configuration
 pub const ENV_CHAIN_SOURCE: &str = "CDK_CHAIN_SOURCE";
@@ -64,10 +61,6 @@ pub struct Config {
     /// Network configuration
     #[serde(default)]
     pub network: NetworkConfig,
-
-    /// GRPC API configuration
-    #[serde(default)]
-    pub grpc: GrpcConfig,
 
     /// Storage configuration
     #[serde(default)]
@@ -132,15 +125,7 @@ pub struct NetworkConfig {
     pub bitcoin_network: Option<String>,
 }
 
-/// GRPC API configuration
-#[derive(Debug, Clone, Deserialize, Default)]
-pub struct GrpcConfig {
-    /// GRPC host
-    pub host: Option<String>,
 
-    /// GRPC port
-    pub port: Option<String>,
-}
 
 /// Storage configuration
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -288,11 +273,6 @@ password = "testpass"
 # Bitcoin network (mainnet, testnet, signet, regtest)
 bitcoin_network = "regtest"
 
-[grpc]
-# GRPC API configuration
-host = "127.0.0.1"
-port = "50051"
-
 [ldk_node]
 # LDK Node configuration
 host = "127.0.0.1"
@@ -432,32 +412,5 @@ source_type = "p2p"
         } else {
             GossipSource::P2P
         }
-    }
-
-    /// Get GRPC host
-    pub fn grpc_host(&self) -> String {
-        self.grpc
-            .host
-            .clone()
-            .unwrap_or_else(|| "127.0.0.1".to_string())
-    }
-
-    /// Get GRPC port
-    pub fn grpc_port(&self) -> String {
-        self.grpc
-            .port
-            .clone()
-            .unwrap_or_else(|| "50051".to_string())
-    }
-
-    /// Get GRPC socket address
-    pub fn grpc_socket_addr(&self) -> Result<SocketAddr> {
-        format!(
-            "{host}:{port}",
-            host = self.grpc_host(),
-            port = self.grpc_port()
-        )
-        .parse::<SocketAddr>()
-        .map_err(|e| anyhow!("Failed to parse GRPC socket address: {}", e))
     }
 }
